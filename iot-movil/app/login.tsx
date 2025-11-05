@@ -19,8 +19,8 @@ import {
 } from 'react-native';
 
 export default function LoginScreen() {
-  const [email, setEmail] = useState('admin@iot.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const { login, isLoading } = useAuth();
 
@@ -52,7 +52,10 @@ export default function LoginScreen() {
     if (success) {
       router.replace('/(tabs)');
     } else {
-      Alert.alert('Error', 'Credenciales incorrectas');
+      Alert.alert(
+        'Error de Acceso', 
+        'Solo los docentes pueden acceder a esta aplicación. Verifica tus credenciales.'
+      );
     }
   };
 
@@ -74,6 +77,7 @@ export default function LoginScreen() {
             />
             <Text style={styles.logoText}>IoT Monitor</Text>
             <Text style={styles.subtitle}>Sistema de Monitoreo Inteligente</Text>
+            <Text style={styles.teacherOnly}>Acceso exclusivo para docentes</Text>
           </View>
 
           <Animated.View style={[styles.formContainer, { opacity: formOpacity }]}>
@@ -137,12 +141,6 @@ export default function LoginScreen() {
                 )}
               </TouchableOpacity>
             </Animated.View>
-
-            <View style={styles.credentialsContainer}>
-              <Text style={styles.credentialsText}>Credenciales de prueba:</Text>
-              <Text style={styles.credentialsText}>Email: admin@iot.com</Text>
-              <Text style={styles.credentialsText}>Contraseña: admin123</Text>
-            </View>
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -180,6 +178,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 5,
+  },
+  teacherOnly: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   formContainer: {
     backgroundColor: 'white',
@@ -233,18 +237,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     marginRight: 10,
-  },
-  credentialsContainer: {
-    marginTop: 30,
-    padding: 15,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 10,
-  },
-  credentialsText: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 2,
   },
 });
 

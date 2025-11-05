@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { motion } from 'framer-motion'
+import { Star, LogOut } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
 
 // Configuración del detector temporal en navegador usando MediaPipe Hands.
 // Cuando se integre el backend con YOLO (yolo11n-pose.pt), se reemplazará este proveedor por el servicio Python.
@@ -59,6 +63,17 @@ export default function HandParticipation() {
   const coolDownRef = useRef(0)
   const lastVerticalRef = useRef(false)
   const resizeHandlerRef = useRef(null)
+  const { logout } = useAuth()
+  const navigate = useNavigate()
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+      navigate('/login')
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error)
+    }
+  }
 
   // Inicializa MediaPipe Hands desde el global (cargado por CDN en index.html)
   const hands = useMemo(() => {
@@ -252,65 +267,112 @@ export default function HandParticipation() {
   const seconds = (sessionSeconds % 60).toString().padStart(2, '0')
 
   return (
-    <div className="sp-container">
-      <div className="sp-card-box">
-        <header className="sp-header">
-          <div className="sp-brand">
-            <div className="sp-logo">SP</div>
-            <div className="sp-title">
-              <h1>Colegio San Pedro</h1>
-              <p>Detección de participación en clase</p>
-            </div>
-          </div>
-          <div className="sp-status">
-            <span className={`sp-badge ${isRunning ? 'live' : 'idle'}`}>{isRunning ? 'En vivo' : 'Listo'}</span>
-            <span className="sp-sub">{status}</span>
-          </div>
-        </header>
+    <div className="fixed inset-0 bg-gradient-to-br from-slate-800 via-purple-900 to-indigo-900 overflow-auto">
+      {/* Estrellas animadas de fondo */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        {[...Array(30)].map((_, i) => (
+          <motion.div
+            key={`star-${i}`}
+            className="absolute text-yellow-300"
+            animate={{
+              y: [0, -20, 0],
+              opacity: [0.3, 1, 0.3],
+              scale: [0.5, 1, 0.5],
+            }}
+            transition={{
+              duration: 3 + Math.random() * 2,
+              repeat: Infinity,
+              delay: Math.random() * 2,
+            }}
+            style={{
+              left: `${Math.random() * 100}%`,
+              top: `${Math.random() * 100}%`,
+            }}
+          >
+            <Star className="w-3 h-3" />
+          </motion.div>
+        ))}
       </div>
-      <div className="sp-card-box">
-        <main className="sp-main">
-          <section className="sp-stage">
-            <div className="sp-video-wrap">
-              <video ref={videoRef} className="sp-video" playsInline muted></video>
-              <canvas ref={canvasRef} className="sp-canvas"></canvas>
-            </div>
-            <div className="sp-overlay-info">
-              <div className="sp-metric">
-                <div className="sp-metric-label">Participaciones</div>
-                <div className="sp-metric-value">{count}</div>
+
+      {/* Botón de cerrar sesión */}
+      <button
+        onClick={handleLogout}
+        className="fixed top-4 right-4 sm:top-6 sm:right-6 z-50 flex flex-col items-center gap-2 p-3 sm:p-4 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-xl border border-white/20 transition-all duration-300 hover:scale-105 group"
+        title="Cerrar sesión"
+      >
+        <LogOut className="w-6 h-6 sm:w-8 sm:h-8 text-white group-hover:text-white/90 transition-colors" />
+        <span className="text-white text-xs sm:text-sm font-medium group-hover:text-white/90 transition-colors">Salir</span>
+      </button>
+
+      {/* Contenido principal */}
+      <div className="relative z-10 min-h-screen p-4">
+        <div className="sp-container">
+          <div className="sp-card-box">
+            <header className="sp-header">
+              <div className="sp-brand">
+                <div className="sp-logo">
+                  <img 
+                    src="/escudo.png" 
+                    alt="Escudo Colegio San Pedro" 
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <div className="sp-title">
+                  <h1>Colegio San Pedro</h1>
+                  <p>Detección de participación en clase</p>
+                </div>
               </div>
-              <div className="sp-metric">
-                <div className="sp-metric-label">Tiempo</div>
-                <div className="sp-metric-value">{minutes}:{seconds}</div>
+              <div className="sp-status">
+                <span className={`sp-badge ${isRunning ? 'live' : 'idle'}`}>{isRunning ? 'En vivo' : 'Listo'}</span>
+                <span className="sp-sub">{status}</span>
               </div>
-            </div>
-          </section>
-          <aside className="sp-controls">
-            <div className="sp-cta">
-              {!isRunning ? (
-                <button className="sp-btn primary" onClick={startSession}>Iniciar detección</button>
-              ) : (
-                <button className="sp-btn danger" onClick={stopSession}>Detener</button>
-              )}
-              <button className="sp-btn ghost" onClick={resetCounter} disabled={isRunning && count === 0}>Reiniciar contador</button>
-            </div>
-            <div className="sp-hint">
-              <p>
-                Para contar una participación, levanta la mano de forma vertical (mano extendida, dedo medio por encima de la muñeca).
-              </p>
-              <p className="sp-note">
-                Nota: Actualmente se usa un detector en el navegador (MediaPipe) solo para demos. Se integrará el modelo YOLO (`yolo11n-pose.pt`) en Python sin cambiar esta interfaz.
-              </p>
-            </div>
-          </aside>
-        </main>
+            </header>
+          </div>
+          <div className="sp-card-box">
+            <main className="sp-main">
+              <section className="sp-stage">
+                <div className="sp-video-wrap">
+                  <video ref={videoRef} className="sp-video" playsInline muted></video>
+                  <canvas ref={canvasRef} className="sp-canvas"></canvas>
+                </div>
+                <div className="sp-overlay-info">
+                  <div className="sp-metric">
+                    <div className="sp-metric-label">Participaciones</div>
+                    <div className="sp-metric-value">{count}</div>
+                  </div>
+                  <div className="sp-metric">
+                    <div className="sp-metric-label">Tiempo</div>
+                    <div className="sp-metric-value">{minutes}:{seconds}</div>
+                  </div>
+                </div>
+              </section>
+              <aside className="sp-controls">
+                <div className="sp-cta">
+                  {!isRunning ? (
+                    <button className="sp-btn primary" onClick={startSession}>Iniciar detección</button>
+                  ) : (
+                    <button className="sp-btn danger" onClick={stopSession}>Detener</button>
+                  )}
+                  <button className="sp-btn ghost" onClick={resetCounter} disabled={isRunning && count === 0}>Reiniciar contador</button>
+                </div>
+                <div className="sp-hint">
+                  <p>
+                    Para contar una participación, levanta la mano de forma vertical (mano extendida, dedo medio por encima de la muñeca).
+                  </p>
+                  <p className="sp-note">
+                    Nota: Actualmente se usa un detector en el navegador (MediaPipe) solo para demos. Se integrará el modelo YOLO (`yolo11n-pose.pt`) en Python sin cambiar esta interfaz.
+                  </p>
+                </div>
+              </aside>
+            </main>
+          </div>
+          <footer className="sp-footer">
+            <span>© {new Date().getFullYear()} Colegio San Pedro</span>
+            <span className="sp-sep">·</span>
+            <span>Versión demo sin guardado de datos</span>
+          </footer>
+        </div>
       </div>
-      <footer className="sp-footer">
-        <span>© {new Date().getFullYear()} Colegio San Pedro</span>
-        <span className="sp-sep">·</span>
-        <span>Versión demo sin guardado de datos</span>
-      </footer>
     </div>
   )
 }
