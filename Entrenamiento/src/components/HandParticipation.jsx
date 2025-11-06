@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Star, LogOut } from 'lucide-react'
+import { Star, LogOut, User, Filter } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 // Configuración del detector temporal en navegador usando MediaPipe Hands.
@@ -63,8 +63,11 @@ export default function HandParticipation() {
   const coolDownRef = useRef(0)
   const lastVerticalRef = useRef(false)
   const resizeHandlerRef = useRef(null)
-  const { logout } = useAuth()
+  const { logout, user } = useAuth()
   const navigate = useNavigate()
+  const [selectedSection, setSelectedSection] = useState('A')
+  const sections = ['A', 'B']
+  const teacherGrade = user?.grade || '1er Grado'
 
   const handleLogout = async () => {
     try {
@@ -294,15 +297,46 @@ export default function HandParticipation() {
         ))}
       </div>
 
-      {/* Botón de cerrar sesión */}
-      <button
-        onClick={handleLogout}
-        className="fixed top-4 right-4 sm:top-6 sm:right-6 z-50 flex flex-col items-center gap-2 p-3 sm:p-4 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-xl border border-white/20 transition-all duration-300 hover:scale-105 group"
-        title="Cerrar sesión"
-      >
-        <LogOut className="w-6 h-6 sm:w-8 sm:h-8 text-white group-hover:text-white/90 transition-colors" />
-        <span className="text-white text-xs sm:text-sm font-medium group-hover:text-white/90 transition-colors">Salir</span>
-      </button>
+      {/* Información del usuario y botón de cerrar sesión */}
+      <div className="fixed top-4 right-4 sm:top-6 sm:right-6 z-50 flex items-center gap-3 sm:gap-4">
+        {/* Información del usuario */}
+        <div className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 bg-white/10 backdrop-blur-sm rounded-xl border border-white/20">
+          {user?.avatarUrl ? (
+            <img 
+              src={user.avatarUrl} 
+              alt={user.name || 'Usuario'}
+              className="w-6 h-6 sm:w-8 sm:h-8 rounded-full object-cover"
+            />
+          ) : (
+            <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-white/20 flex items-center justify-center">
+              <User className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+            </div>
+          )}
+          <div className="hidden sm:block">
+            <p className="text-white text-xs sm:text-sm font-medium">{user?.name || 'Docente'}</p>
+            <p className="text-white/70 text-xs">{user?.grade || 'Grado'}</p>
+          </div>
+        </div>
+        {/* Botón de cerrar sesión */}
+        <button
+          onClick={handleLogout}
+          className="flex flex-col items-center gap-2 p-3 sm:p-4 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-xl border border-white/20 transition-all duration-300 hover:scale-105 group"
+          title="Cerrar sesión"
+        >
+          <LogOut className="w-6 h-6 sm:w-8 sm:h-8 text-white group-hover:text-white/90 transition-colors" />
+          <span className="text-white text-xs sm:text-sm font-medium group-hover:text-white/90 transition-colors">Salir</span>
+        </button>
+      </div>
+
+      {/* Descripción del panel de docente en la parte superior izquierda */}
+      <div className="fixed top-4 left-4 sm:top-6 sm:left-6 z-50 max-w-xs sm:max-w-sm">
+        <div className="p-4 sm:p-5 bg-white/10 backdrop-blur-sm rounded-xl border border-white/20">
+          <h2 className="text-white text-base sm:text-lg font-bold mb-2">Panel de Docente - Colegio San Pedro</h2>
+          <p className="text-white/80 text-xs sm:text-sm mb-3 leading-relaxed">
+            Monitoreo de participación en tiempo real
+          </p>
+        </div>
+      </div>
 
       {/* Contenido principal */}
       <div className="relative z-10 min-h-screen p-4">
@@ -318,8 +352,8 @@ export default function HandParticipation() {
                   />
                 </div>
                 <div className="sp-title">
-                  <h1>Colegio San Pedro</h1>
-                  <p>Detección de participación en clase</p>
+                  <h1>Detección de participación</h1>
+                  <p>Colegio San Pedro</p>
                 </div>
               </div>
               <div className="sp-status">
@@ -347,6 +381,35 @@ export default function HandParticipation() {
                 </div>
               </section>
               <aside className="sp-controls">
+                {/* Filtro de grado y sección */}
+                <div className="sp-section-filter">
+                  <div className="sp-filter-row">
+                    <div className="sp-grade-display">
+                      <Filter className="sp-filter-icon" />
+                      <span className="sp-filter-text">Mi grado asignado:</span>
+                      <span className="sp-grade-badge">{teacherGrade}</span>
+                    </div>
+                    <div className="sp-section-selector">
+                      <span className="sp-filter-text">Filtrar por sección:</span>
+                      <select
+                        id="section-select"
+                        value={selectedSection}
+                        onChange={(e) => setSelectedSection(e.target.value)}
+                        disabled={isRunning}
+                        className="sp-filter-select"
+                      >
+                        {sections.map((section) => (
+                          <option key={section} value={section}>
+                            Sección {section}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <p className="sp-filter-hint">
+                    Como docente de {teacherGrade}, tienes acceso a ambas secciones (A y B).
+                  </p>
+                </div>
                 <div className="sp-cta">
                   {!isRunning ? (
                     <button className="sp-btn primary" onClick={startSession}>Iniciar detección</button>
@@ -359,17 +422,12 @@ export default function HandParticipation() {
                   <p>
                     Para contar una participación, levanta la mano de forma vertical (mano extendida, dedo medio por encima de la muñeca).
                   </p>
-                  <p className="sp-note">
-                    Nota: Actualmente se usa un detector en el navegador (MediaPipe) solo para demos. Se integrará el modelo YOLO (`yolo11n-pose.pt`) en Python sin cambiar esta interfaz.
-                  </p>
                 </div>
               </aside>
             </main>
           </div>
           <footer className="sp-footer">
             <span>© {new Date().getFullYear()} Colegio San Pedro</span>
-            <span className="sp-sep">·</span>
-            <span>Versión demo sin guardado de datos</span>
           </footer>
         </div>
       </div>
