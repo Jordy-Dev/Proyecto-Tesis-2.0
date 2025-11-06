@@ -112,7 +112,7 @@ body {
 .sp-status {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center; 
   justify-content: center;
   gap: 4px;
 }
@@ -229,5 +229,103 @@ body {
   font-size: 13px;
 }
 .sp-sep { opacity: 0.5; }
+
+/* Estilos para el filtro de sección y grado */
+.sp-section-filter {
+  padding: 16px;
+  background: rgba(18, 25, 53, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sp-filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sp-grade-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sp-filter-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--sp-primary);
+  flex-shrink: 0;
+}
+
+.sp-filter-text {
+  color: var(--sp-text-dim);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.sp-grade-badge {
+  padding: 6px 12px;
+  background: rgba(45, 226, 230, 0.15);
+  border: 1px solid rgba(45, 226, 230, 0.3);
+  border-radius: 8px;
+  color: var(--sp-primary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.sp-section-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sp-filter-select {
+  padding: 8px 12px;
+  background: rgba(11, 16, 32, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: var(--sp-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s;
+  flex: 1;
+  min-width: 120px;
+}
+
+.sp-filter-select:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.sp-filter-select:focus {
+  border-color: var(--sp-primary);
+  box-shadow: 0 0 0 3px rgba(45, 226, 230, 0.1);
+}
+
+.sp-filter-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sp-filter-select option {
+  background: var(--sp-surface);
+  color: var(--sp-text);
+}
+
+.sp-filter-hint {
+  color: var(--sp-text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
 
 /* Ya usamos una columna por defecto */

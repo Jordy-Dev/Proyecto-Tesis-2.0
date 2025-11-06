@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Star, LogOut, User, Filter } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import participationApiService from '../services/participationApi'
 
 // Configuración del detector temporal en navegador usando MediaPipe Hands.
 // Cuando se integre el backend con YOLO (yolo11n-pose.pt), se reemplazará este proveedor por el servicio Python.
@@ -68,6 +69,10 @@ export default function HandParticipation() {
   const [selectedSection, setSelectedSection] = useState('A')
   const sections = ['A', 'B']
   const teacherGrade = user?.grade || '1er Grado'
+  const sessionIdRef = useRef(null)
+  const updateIntervalRef = useRef(null)
+  const countRef = useRef(0)
+  const sessionSecondsRef = useRef(0)
 
   const handleLogout = async () => {
     try {
@@ -162,7 +167,11 @@ export default function HandParticipation() {
     const cooldownActive = now < coolDownRef.current
 
     if (anyVertical && !lastVerticalRef.current && !cooldownActive) {
-      setCount((c) => c + 1)
+      setCount((c) => {
+        const newCount = c + 1
+        countRef.current = newCount
+        return newCount
+      })
       coolDownRef.current = now + 1200 // 1.2s de cooldown por evento
     }
     lastVerticalRef.current = anyVertical
@@ -224,32 +233,111 @@ export default function HandParticipation() {
       setStatus('Inicializando detector...')
       return
     }
-    hands.onResults(onResults)
-    await startCamera()
-    setIsRunning(true)
-    setStatus('Detectando manos...')
-    timerRef.current = window.setInterval(() => {
-      setSessionSeconds((s) => s + 1)
-    }, 1000)
-  }, [hands, onResults, startCamera])
+    
+    try {
+      // Crear sesión en la base de datos
+      setStatus('Creando sesión...')
+      const session = await participationApiService.createSession(
+        user?.name || 'Docente',
+        teacherGrade,
+        selectedSection
+      )
+      sessionIdRef.current = session._id
+      setStatus('Sesión creada')
+      
+      // Iniciar MediaPipe
+      hands.onResults(onResults)
+      await startCamera()
+      setIsRunning(true)
+      setStatus('Detectando manos...')
+      
+      // Timer para contar segundos
+      timerRef.current = window.setInterval(() => {
+        setSessionSeconds((s) => {
+          const newSeconds = s + 1
+          sessionSecondsRef.current = newSeconds
+          return newSeconds
+        })
+      }, 1000)
+      
+      // Actualizar sesión en la base de datos cada 5 segundos
+      updateIntervalRef.current = window.setInterval(async () => {
+        if (sessionIdRef.current) {
+          try {
+            // Usar los valores actuales de las refs
+            await participationApiService.updateSession(
+              sessionIdRef.current,
+              countRef.current,
+              sessionSecondsRef.current
+            )
+          } catch (error) {
+            console.error('Error actualizando sesión:', error)
+            // No mostrar error al usuario, solo loguear
+          }
+        }
+      }, 5000) // Actualizar cada 5 segundos
+      
+    } catch (error) {
+      console.error('Error al crear sesión:', error)
+      setStatus(`Error: ${error.message}`)
+    }
+  }, [hands, onResults, startCamera, user, teacherGrade, selectedSection])
 
-  const stopSession = useCallback(() => {
+  const stopSession = useCallback(async () => {
     setIsRunning(false)
     cancelAnimationFrame(animationRef.current)
     stopCamera()
     window.clearInterval(timerRef.current)
+    
+    // Limpiar intervalo de actualización
+    if (updateIntervalRef.current) {
+      window.clearInterval(updateIntervalRef.current)
+      updateIntervalRef.current = null
+    }
+    
     if (resizeHandlerRef.current) {
       window.removeEventListener('resize', resizeHandlerRef.current)
     }
-    setStatus('Detenido')
+    
+    // Finalizar sesión en la base de datos
+    if (sessionIdRef.current) {
+      try {
+        setStatus('Finalizando sesión...')
+        await participationApiService.completeSession(
+          sessionIdRef.current,
+          countRef.current,
+          sessionSecondsRef.current
+        )
+        setStatus('Sesión guardada')
+        sessionIdRef.current = null
+      } catch (error) {
+        console.error('Error al finalizar sesión:', error)
+        setStatus('Sesión detenida (error al guardar)')
+      }
+    } else {
+      setStatus('Detenido')
+    }
   }, [stopCamera])
 
   const resetCounter = useCallback(() => {
     setCount(0)
     setSessionSeconds(0)
+    countRef.current = 0
+    sessionSecondsRef.current = 0
     lastVerticalRef.current = false
     coolDownRef.current = 0
-  }, [])
+    
+    // Actualizar sesión en la base de datos si existe
+    if (sessionIdRef.current && isRunning) {
+      participationApiService.updateSession(
+        sessionIdRef.current,
+        0,
+        0
+      ).catch(error => {
+        console.error('Error al reiniciar contador en sesión:', error)
+      })
+    }
+  }, [isRunning])
 
   useEffect(() => {
     if (!isRunning) return
@@ -258,13 +346,46 @@ export default function HandParticipation() {
   }, [isRunning, processFrame])
 
   useEffect(() => {
+    // Cleanup solo al desmontar el componente
     return () => {
-      stopSession()
+      // Limpiar intervalos al desmontar
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current)
+      }
+      if (updateIntervalRef.current) {
+        window.clearInterval(updateIntervalRef.current)
+      }
+      
+      // Cancelar animación
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current)
+      }
+      
+      // Detener cámara
+      const videoEl = videoRef.current
+      if (videoEl && videoEl.srcObject) {
+        const tracks = videoEl.srcObject.getTracks()
+        tracks.forEach((t) => t.stop())
+        videoEl.srcObject = null
+      }
+      
+      // Limpiar resize handler
       if (resizeHandlerRef.current) {
         window.removeEventListener('resize', resizeHandlerRef.current)
       }
+      
+      // Finalizar sesión si está activa
+      if (sessionIdRef.current) {
+        participationApiService.completeSession(
+          sessionIdRef.current,
+          countRef.current,
+          sessionSecondsRef.current
+        ).catch(error => {
+          console.error('Error al finalizar sesión al desmontar:', error)
+        })
+      }
     }
-  }, [stopSession])
+  }, []) // Sin dependencias - solo se ejecuta al montar/desmontar
 
   const minutes = Math.floor(sessionSeconds / 60).toString().padStart(2, '0')
   const seconds = (sessionSeconds % 60).toString().padStart(2, '0')
@@ -406,9 +527,7 @@ export default function HandParticipation() {
                       </select>
                     </div>
                   </div>
-                  <p className="sp-filter-hint">
-                    Como docente de {teacherGrade}, tienes acceso a ambas secciones (A y B).
-                  </p>
+                  
                 </div>
                 <div className="sp-cta">
                   {!isRunning ? (
