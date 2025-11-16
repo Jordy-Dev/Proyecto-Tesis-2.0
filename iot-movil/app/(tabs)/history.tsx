@@ -120,7 +120,13 @@ export default function HistoryScreen() {
         <View style={styles.dataRow}>
           <Text style={styles.dataLabel}>Fecha:</Text>
           <Text style={styles.dataValue}>
-            {item.timestamp.toLocaleDateString()} {item.timestamp.toLocaleTimeString()}
+            {item.timestamp.toLocaleDateString()}
+          </Text>
+        </View>
+        <View style={styles.dataRow}>
+          <Text style={styles.dataLabel}>Hora:</Text>
+          <Text style={styles.dataValue}>
+            {item.timestamp.toLocaleTimeString()}
           </Text>
         </View>
       </View>
@@ -174,13 +180,15 @@ export default function HistoryScreen() {
           </Text>
         </View>
         <View style={styles.dataRow}>
-          <Text style={styles.dataLabel}>Voltaje ADC:</Text>
-          <Text style={styles.dataValue}>{item.voltage} V</Text>
-        </View>
-        <View style={styles.dataRow}>
           <Text style={styles.dataLabel}>Fecha:</Text>
           <Text style={styles.dataValue}>
-            {item.timestamp.toLocaleDateString()} {item.timestamp.toLocaleTimeString()}
+            {item.timestamp.toLocaleDateString()}
+          </Text>
+        </View>
+        <View style={styles.dataRow}>
+          <Text style={styles.dataLabel}>Hora:</Text>
+          <Text style={styles.dataValue}>
+            {item.timestamp.toLocaleTimeString()}
           </Text>
         </View>
       </View>

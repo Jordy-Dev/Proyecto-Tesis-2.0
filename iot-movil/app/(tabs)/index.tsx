@@ -99,7 +99,10 @@ export default function HomeScreen() {
         <View style={styles.sensorContainer}>
           <View style={styles.sensorHeader}>
             <Ionicons name="pulse" size={24} color="#FF6B6B" />
-            <Text style={styles.sensorTitle}>Sensor SW-18010</Text>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.sensorTitle}>Vibración</Text>
+              <Text style={styles.sensorSubtitle}>(Sensor SW-18010)</Text>
+            </View>
             <View style={[
               styles.statusBadge, 
               { backgroundColor: latestVibration ? getStatusColor(latestVibration.status) : '#9E9E9E' }
@@ -152,7 +155,10 @@ export default function HomeScreen() {
         <View style={styles.sensorContainer}>
           <View style={styles.sensorHeader}>
             <Ionicons name="leaf" size={24} color="#4ECDC4" />
-            <Text style={styles.sensorTitle}>Sensor MQ-135</Text>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.sensorTitle}>Calidad de Aire</Text>
+              <Text style={styles.sensorSubtitle}>(Sensor MQ-135)</Text>
+            </View>
             <View style={[
               styles.statusBadge, 
               { backgroundColor: latestAirQuality ? getStatusColor(latestAirQuality.status) : '#9E9E9E' }
@@ -319,8 +325,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#1F2937',
-    marginLeft: 12,
-    flex: 1,
+  },
+  sensorSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 4,
   },
   statusBadge: {
     paddingHorizontal: 12,

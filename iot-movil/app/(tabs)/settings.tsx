@@ -198,7 +198,7 @@ export default function SettingsScreen() {
           
           <SettingItem
             icon="hardware-chip"
-            title="Sensor de Vibración SW-18210"
+            title="Sensor de Vibración SW-18010"
             subtitle="Rango: 45-70 Hz | Precisión: ±2%"
             onPress={() => {
               Alert.alert(

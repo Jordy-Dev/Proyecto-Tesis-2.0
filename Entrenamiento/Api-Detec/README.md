@@ -229,3 +229,7 @@ const completeSession = async (sessionId, count, duration) => {
 
 Esta API es parte del sistema educativo del Colegio San Pedro, diseñado para mejorar el monitoreo de participación estudiantil mediante tecnología de detección de gestos.
 
+
+
+
+

@@ -59,7 +59,6 @@ export default function ChartsScreen() {
     const coData = airQualityData.slice(0, 8).map(data => data.co);
     const so2Data = airQualityData.slice(0, 8).map(data => data.so2);
     const humoData = airQualityData.slice(0, 8).map(data => data.humo);
-    const voltageData = airQualityData.slice(0, 8).map(data => data.voltage);
     const fanData = airQualityData.slice(0, 8).map(data => data.fanActive ? 1 : 0);
 
     return {
@@ -119,16 +118,6 @@ export default function ChartsScreen() {
           {
             data: humoData,
             color: (opacity = 1) => `rgba(96, 125, 139, ${opacity})`,
-            strokeWidth: 3,
-          },
-        ],
-      },
-      voltage: {
-        labels,
-        datasets: [
-          {
-            data: voltageData,
-            color: (opacity = 1) => `rgba(33, 150, 243, ${opacity})`,
             strokeWidth: 3,
           },
         ],
@@ -350,42 +339,22 @@ export default function ChartsScreen() {
       </View>
 
       <View style={styles.chartCard}>
-        <Text style={styles.chartTitle}>Voltaje ADC y Estado del Ventilador</Text>
+        <Text style={styles.chartTitle}>Estado del Ventilador</Text>
         <Text style={styles.chartSubtitle}>Sensor MQ-135 - Últimas 16 horas</Text>
-        <View style={styles.dualChartContainer}>
-          <View style={styles.halfChart}>
-            <Text style={styles.halfChartTitle}>Voltaje ADC (V)</Text>
-            <LineChart
-              data={airQualityChartData.voltage}
-              width={chartWidth / 2 - 10}
-              height={Math.min(150, chartHeight)}
-              chartConfig={chartConfig}
-              bezier
-              style={styles.halfChartStyle}
-              withInnerLines={false}
-              withOuterLines={false}
-              withVerticalLines={false}
-              withHorizontalLines={true}
-            />
-          </View>
-          <View style={styles.halfChart}>
-            <Text style={styles.halfChartTitle}>Ventilador</Text>
-            <LineChart
-              data={airQualityChartData.fan}
-              width={chartWidth / 2 - 10}
-              height={Math.min(150, chartHeight)}
-              chartConfig={chartConfig}
-              bezier
-              style={styles.halfChartStyle}
-              withInnerLines={false}
-              withOuterLines={false}
-              withVerticalLines={false}
-              withHorizontalLines={true}
-            />
-          </View>
-        </View>
+        <LineChart
+          data={airQualityChartData.fan}
+          width={chartWidth}
+          height={chartHeight}
+          chartConfig={chartConfig}
+          bezier
+          style={styles.chart}
+          withInnerLines={true}
+          withOuterLines={false}
+          withVerticalLines={false}
+          withHorizontalLines={true}
+        />
         <View style={styles.chartInfo}>
-          <Text style={styles.chartInfoText}>Voltaje ADC: 0-3.3V (12 bits)</Text>
+          <Text style={styles.chartInfoText}>Unidad: Binaria (0=Inactivo, 1=Activo)</Text>
           <Text style={styles.chartInfoText}>Ventilador: Se activa con humo>100ppm o CO>50ppm</Text>
         </View>
       </View>
