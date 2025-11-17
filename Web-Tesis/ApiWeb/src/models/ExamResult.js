@@ -178,32 +178,59 @@ examResultSchema.statics.findFailed = function(userId = null) {
 
 // Método estático para obtener estadísticas de un usuario
 examResultSchema.statics.getUserStatistics = async function(userId) {
-  const stats = await this.aggregate([
-    { $match: { userId: mongoose.Types.ObjectId(userId) } },
-    {
-      $group: {
-        _id: null,
-        totalExams: { $sum: 1 },
-        passedExams: { $sum: { $cond: ['$passed', 1, 0] } },
-        failedExams: { $sum: { $cond: ['$passed', 0, 1] } },
-        averageScore: { $avg: '$percentageScore' },
-        highestScore: { $max: '$percentageScore' },
-        lowestScore: { $min: '$percentageScore' },
-        totalPoints: { $sum: '$pointsEarned' },
-        averageTime: { $avg: '$timeTaken' }
-      }
+  // Evitar problemas con ObjectId en agregaciones: usamos find() normal
+  const results = await this.find({ userId });
+
+  if (!results.length) {
+    return {
+      totalExams: 0,
+      passedExams: 0,
+      failedExams: 0,
+      averageScore: 0,
+      highestScore: 0,
+      lowestScore: 0,
+      totalPoints: 0,
+      averageTime: 0
+    };
+  }
+
+  const totalExams = results.length;
+  let passedExams = 0;
+  let failedExams = 0;
+  let sumScore = 0;
+  let highestScore = -Infinity;
+  let lowestScore = Infinity;
+  let totalPoints = 0;
+  let sumTime = 0;
+  let timeCount = 0;
+
+  for (const r of results) {
+    if (r.passed) passedExams += 1;
+    else failedExams += 1;
+
+    sumScore += r.percentageScore || 0;
+    if (r.percentageScore != null) {
+      if (r.percentageScore > highestScore) highestScore = r.percentageScore;
+      if (r.percentageScore < lowestScore) lowestScore = r.percentageScore;
     }
-  ]);
-  
-  return stats[0] || {
-    totalExams: 0,
-    passedExams: 0,
-    failedExams: 0,
-    averageScore: 0,
-    highestScore: 0,
-    lowestScore: 0,
-    totalPoints: 0,
-    averageTime: 0
+
+    totalPoints += r.pointsEarned || 0;
+
+    if (typeof r.timeTaken === 'number') {
+      sumTime += r.timeTaken;
+      timeCount += 1;
+    }
+  }
+
+  return {
+    totalExams,
+    passedExams,
+    failedExams,
+    averageScore: sumScore / totalExams,
+    highestScore: highestScore === -Infinity ? 0 : highestScore,
+    lowestScore: lowestScore === Infinity ? 0 : lowestScore,
+    totalPoints,
+    averageTime: timeCount ? (sumTime / timeCount) : 0
   };
 };
 

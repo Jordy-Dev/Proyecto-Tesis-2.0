@@ -179,7 +179,7 @@ const LandingPage = () => {
               className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-full px-4 sm:px-6 py-2 sm:py-3 mb-6 sm:mb-8"
             >
               <span className="text-white font-medium text-base sm:text-lg">
-                Plataforma educativa innovadora que utiliza inteligencia artificial para crear exámenes personalizados de comprensión lectora.
+                Plataforma educativa que utiliza inteligencia artificial para crear exámenes personalizados de comprensión lectora.
               </span>
             </motion.div>
 

@@ -10,6 +10,7 @@ import Register from './pages/Register'
 import StudentDashboard from './pages/StudentDashboard'
 import TeacherDashboard from './pages/TeacherDashboard'
 import ExamPage from './pages/ExamPage'
+import TempExamPage from './pages/TempExamPage'
 
 function App() {
   return (
@@ -41,6 +42,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ExamPage />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/temp-exam" 
+              element={
+                <ProtectedRoute>
+                  <TempExamPage />
                 </ProtectedRoute>
               } 
             />

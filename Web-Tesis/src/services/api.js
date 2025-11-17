@@ -118,11 +118,13 @@ class ApiService {
     formData.append('fileSize', fileSize);
 
     const token = localStorage.getItem('token');
-    
+
     const response = await fetch(`${this.baseURL}/documents/upload`, {
       method: 'POST',
       headers: {
         ...(token && { Authorization: `Bearer ${token}` }),
+        // No establecer Content-Type manualmente para que el navegador
+        // configure correctamente multipart/form-data con boundary
       },
       body: formData,
     });
@@ -179,6 +181,13 @@ class ApiService {
     return this.request('/exams/create', {
       method: 'POST',
       body: JSON.stringify(examData),
+    });
+  }
+
+  async generateTempExam(payload) {
+    return this.request('/exams/generate-temp', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 

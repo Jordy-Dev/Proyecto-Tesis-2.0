@@ -104,7 +104,7 @@ const getDocument = async (req, res, next) => {
       });
     }
 
-    // Verificar acceso
+    // Verificar acceso: los estudiantes solo pueden ver sus propios documentos
     if (req.user.userType === 'student' && document.userId.toString() !== userId) {
       return res.status(403).json({
         success: false,
@@ -304,7 +304,6 @@ const getDocumentsByGrade = async (req, res, next) => {
 const processDocument = async (req, res, next) => {
   try {
     const { documentId } = req.params;
-    const userId = req.user._id;
 
     const document = await Document.findById(documentId);
     
@@ -315,35 +314,16 @@ const processDocument = async (req, res, next) => {
       });
     }
 
-    // Verificar acceso
-    if (req.user.userType === 'student' && document.userId.toString() !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'No tienes acceso a este documento'
-      });
+    // Marcar inmediatamente como analizado (por ahora el procesamiento es simulado)
+    document.status = 'analyzed';
+    if (!document.contentText) {
+      document.contentText = 'Contenido extraído del documento...'; // Simulado
     }
-
-    // Simular procesamiento con IA
-    document.status = 'processing';
     await document.save();
-
-    // Simular tiempo de procesamiento
-    setTimeout(async () => {
-      try {
-        document.status = 'analyzed';
-        document.contentText = 'Contenido extraído del documento...'; // Simulado
-        await document.save();
-      } catch (error) {
-        console.error('Error procesando documento:', error);
-        document.status = 'error';
-        document.errorMessage = 'Error procesando el documento';
-        await document.save();
-      }
-    }, 5000);
 
     res.json({
       success: true,
-      message: 'Documento enviado para procesamiento',
+      message: 'Documento procesado exitosamente',
       data: {
         document: {
           id: document._id,

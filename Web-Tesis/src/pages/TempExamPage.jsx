@@ -1,101 +1,52 @@
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { useAuth } from '../contexts/AuthContext'
-import { 
-  Clock, 
-  BookOpen, 
-  CheckCircle, 
-  ArrowLeft,
-  ArrowRight,
-  Brain,
-  Target
-} from 'lucide-react'
+import { Clock, BookOpen, CheckCircle, ArrowLeft, ArrowRight, Brain, Target } from 'lucide-react'
 import toast from 'react-hot-toast'
-import apiService from '../services/api'
 
-const ExamPage = () => {
-  const { examId } = useParams()
-  const { user } = useAuth()
+const TempExamPage = () => {
+  const location = useLocation()
   const navigate = useNavigate()
-  const [exam, setExam] = useState(null)
-  const [questions, setQuestions] = useState([])
+  const { exam, questions } = location.state || {}
+
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [answers, setAnswers] = useState({})
-  const [timeLeft, setTimeLeft] = useState(0)
+  const [timeLeft, setTimeLeft] = useState(exam?.timeLimit ? exam.timeLimit * 60 : 0)
   const [isStarted, setIsStarted] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadExam()
-  }, [examId])
+    if (!exam || !questions || !questions.length) {
+      toast.error('Datos de examen no disponibles')
+      navigate('/student/dashboard')
+    }
+  }, [exam, questions, navigate])
 
   useEffect(() => {
     let timer
     if (isStarted && timeLeft > 0) {
       timer = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            handleSubmitExam()
-            return 0
-          }
-          return prev - 1
-        })
+        setTimeLeft(prev => (prev > 0 ? prev - 1 : 0))
       }, 1000)
     }
     return () => clearInterval(timer)
   }, [isStarted, timeLeft])
 
-  const loadExam = async () => {
-    try {
-      setLoading(true)
-      
-      // Cargar examen
-      const examResponse = await apiService.getExam(examId)
-      if (examResponse.success) {
-        setExam(examResponse.data.exam)
-        
-        // Cargar preguntas
-        const questionsResponse = await apiService.getExamQuestions(examId)
-        if (questionsResponse.success) {
-          setQuestions(questionsResponse.data.questions)
-          
-          // Inicializar respuestas
-          const initialAnswers = {}
-          questionsResponse.data.questions.forEach(q => {
-            initialAnswers[q._id] = null
-          })
-          setAnswers(initialAnswers)
-        }
-      }
-    } catch (error) {
-      console.error('Error cargando examen:', error)
-      toast.error('Error al cargar el examen')
-      navigate('/student/dashboard')
-    } finally {
-      setLoading(false)
+  if (!exam || !questions || !questions.length) {
+    return null
+  }
+
+  const startExam = () => {
+    setIsStarted(true)
+    if (!timeLeft && exam.timeLimit) {
+      setTimeLeft(exam.timeLimit * 60)
     }
   }
 
-  const startExam = async () => {
-    try {
-      const response = await apiService.startExam(examId)
-      if (response.success) {
-        setIsStarted(true)
-        setTimeLeft(exam.timeLimit * 60) // Convertir minutos a segundos
-        toast.success('¡Examen iniciado!')
-      }
-    } catch (error) {
-      console.error('Error iniciando examen:', error)
-      toast.error('Error al iniciar el examen')
-    }
-  }
-
-  const handleAnswerSelect = (questionId, answer) => {
+  const handleAnswerSelect = (questionIndex, answer) => {
     setAnswers(prev => ({
       ...prev,
-      [questionId]: answer
+      [questionIndex]: answer
     }))
   }
 
@@ -111,30 +62,25 @@ const ExamPage = () => {
     }
   }
 
-  const handleSubmitExam = async () => {
+  const handleSubmitExam = () => {
     if (isSubmitting) return
-    
     setIsSubmitting(true)
-    
-    try {
-      // Preparar respuestas para enviar
-      const answersToSubmit = Object.entries(answers).map(([questionId, answer]) => ({
-        questionId,
-        selectedOption: answer,
-        timeSpent: 30 // Tiempo simulado por pregunta
-      }))
 
-      const response = await apiService.submitExam(examId, answersToSubmit)
-      if (response.success) {
-        toast.success('¡Examen completado exitosamente!')
-        navigate('/student/dashboard')
+    const total = questions.length
+    let correct = 0
+
+    questions.forEach((q, index) => {
+      const selected = answers[index]
+      const correctOption = q.options?.find(o => o.isCorrect)
+      if (selected && correctOption && selected === correctOption.letter) {
+        correct += 1
       }
-    } catch (error) {
-      console.error('Error enviando examen:', error)
-      toast.error('Error al enviar el examen')
-    } finally {
-      setIsSubmitting(false)
-    }
+    })
+
+    const percentage = total ? Math.round((correct / total) * 100) : 0
+
+    toast.success(`Examen finalizado. Puntaje: ${percentage}% (${correct}/${total})`)
+    navigate('/student/dashboard')
   }
 
   const formatTime = (seconds) => {
@@ -143,54 +89,21 @@ const ExamPage = () => {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando examen...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!exam || !questions.length) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-600">Examen no encontrado</p>
-          <button
-            onClick={() => navigate('/student/dashboard')}
-            className="mt-4 text-primary-600 hover:text-primary-700"
-          >
-            Volver al dashboard
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   const currentQ = questions[currentQuestion]
   const progress = ((currentQuestion + 1) / questions.length) * 100
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-3">
-              <img 
-                src="/escudo.png" 
-                alt="Escudo Colegio San Pedro" 
-                className="w-8 h-8 object-contain"
-              />
+              <img src="/escudo.png" alt="Escudo Colegio San Pedro" className="w-8 h-8 object-contain" />
               <div>
                 <h1 className="text-lg font-bold text-gray-800">{exam.title}</h1>
-                <p className="text-sm text-gray-600">Colegio San Pedro</p>
+                <p className="text-sm text-gray-600">Examen temporal (no se guarda en la base de datos)</p>
               </div>
             </div>
-            
             {isStarted && (
               <div className="flex items-center gap-2 text-red-600">
                 <Clock className="w-5 h-5" />
@@ -203,7 +116,6 @@ const ExamPage = () => {
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {!isStarted ? (
-          /* Pantalla de inicio */
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -212,20 +124,18 @@ const ExamPage = () => {
             <div className="w-20 h-20 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <Brain className="w-10 h-10 text-primary-600" />
             </div>
-            
             <h2 className="text-2xl font-bold text-gray-800 mb-4">{exam.title}</h2>
-            <p className="text-gray-600 mb-6">{exam.description}</p>
-            
+            <p className="text-gray-600 mb-6">Examen generado automáticamente con IA (no se guarda en la base de datos).</p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
               <div className="bg-gray-50 rounded-xl p-4">
                 <BookOpen className="w-8 h-8 text-primary-600 mx-auto mb-2" />
                 <p className="text-sm text-gray-600">Total de preguntas</p>
-                <p className="text-xl font-bold text-gray-800">{exam.totalQuestions}</p>
+                <p className="text-xl font-bold text-gray-800">{questions.length}</p>
               </div>
               <div className="bg-gray-50 rounded-xl p-4">
                 <Target className="w-8 h-8 text-green-600 mx-auto mb-2" />
                 <p className="text-sm text-gray-600">Puntaje de aprobación</p>
-                <p className="text-xl font-bold text-gray-800">{exam.passingScore}%</p>
+                <p className="text-xl font-bold text-gray-800">70%</p>
               </div>
               <div className="bg-gray-50 rounded-xl p-4">
                 <Clock className="w-8 h-8 text-blue-600 mx-auto mb-2" />
@@ -233,7 +143,6 @@ const ExamPage = () => {
                 <p className="text-xl font-bold text-gray-800">{exam.timeLimit} min</p>
               </div>
             </div>
-            
             <button
               onClick={startExam}
               className="bg-gradient-to-r from-primary-500 to-secondary-500 text-white px-8 py-4 rounded-xl font-semibold hover:from-primary-600 hover:to-secondary-600 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
@@ -242,9 +151,7 @@ const ExamPage = () => {
             </button>
           </motion.div>
         ) : (
-          /* Examen en progreso */
           <div className="space-y-6">
-            {/* Barra de progreso */}
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm font-medium text-gray-700">
@@ -253,14 +160,13 @@ const ExamPage = () => {
                 <span className="text-sm text-gray-500">{Math.round(progress)}% completado</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
+                <div
                   className="bg-gradient-to-r from-primary-500 to-secondary-500 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${progress}%` }}
                 ></div>
               </div>
             </div>
 
-            {/* Pregunta actual */}
             <motion.div
               key={currentQuestion}
               initial={{ opacity: 0, x: 20 }}
@@ -270,31 +176,30 @@ const ExamPage = () => {
               <h3 className="text-lg font-semibold text-gray-800 mb-6">
                 {currentQ.questionText}
               </h3>
-              
               <div className="space-y-3">
                 {currentQ.options?.map((option) => (
                   <label
                     key={option.letter}
                     className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ${
-                      answers[currentQ._id] === option.letter
+                      answers[currentQuestion] === option.letter
                         ? 'border-primary-500 bg-primary-50'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
                     <input
                       type="radio"
-                      name={`question-${currentQ._id}`}
+                      name={`question-${currentQuestion}`}
                       value={option.letter}
-                      checked={answers[currentQ._id] === option.letter}
-                      onChange={() => handleAnswerSelect(currentQ._id, option.letter)}
+                      checked={answers[currentQuestion] === option.letter}
+                      onChange={() => handleAnswerSelect(currentQuestion, option.letter)}
                       className="sr-only"
                     />
                     <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 ${
-                      answers[currentQ._id] === option.letter
+                      answers[currentQuestion] === option.letter
                         ? 'border-primary-500 bg-primary-500'
                         : 'border-gray-300'
                     }`}>
-                      {answers[currentQ._id] === option.letter && (
+                      {answers[currentQuestion] === option.letter && (
                         <CheckCircle className="w-4 h-4 text-white" />
                       )}
                     </span>
@@ -305,7 +210,6 @@ const ExamPage = () => {
               </div>
             </motion.div>
 
-            {/* Navegación */}
             <div className="flex justify-between items-center">
               <button
                 onClick={prevQuestion}
@@ -315,7 +219,7 @@ const ExamPage = () => {
                 <ArrowLeft className="w-4 h-4" />
                 Anterior
               </button>
-              
+
               <div className="flex gap-2">
                 {questions.map((_, index) => (
                   <button
@@ -324,7 +228,7 @@ const ExamPage = () => {
                     className={`w-8 h-8 rounded-full text-sm font-medium transition-colors ${
                       index === currentQuestion
                         ? 'bg-primary-500 text-white'
-                        : answers[questions[index]._id]
+                        : answers[index]
                         ? 'bg-green-100 text-green-700'
                         : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
                     }`}
@@ -333,7 +237,7 @@ const ExamPage = () => {
                   </button>
                 ))}
               </div>
-              
+
               {currentQuestion === questions.length - 1 ? (
                 <button
                   onClick={handleSubmitExam}
@@ -369,4 +273,4 @@ const ExamPage = () => {
   )
 }
 
-export default ExamPage
+export default TempExamPage
