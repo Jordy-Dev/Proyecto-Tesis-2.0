@@ -18,7 +18,6 @@ import {
   ArrowRight
 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
-
 import DocumentUpload from '../components/DocumentUpload'
 import toast from 'react-hot-toast'
 import apiService from '../services/api'
@@ -36,7 +35,6 @@ const StudentDashboard = () => {
     currentStreak: 0
   })
   const [loading, setLoading] = useState(true)
-  const [creatingExam, setCreatingExam] = useState(false)
 
   useEffect(() => {
     loadDashboardData()
@@ -58,8 +56,8 @@ const StudentDashboard = () => {
         setDocuments(documentsResponse.data.documents)
       }
 
-      // Cargar estadísticas del usuario
-      const progressResponse = await apiService.getStudentProgress(user._id)
+      // Cargar estadísticas del usuario (sin pasar ID, usa el usuario autenticado)
+      const progressResponse = await apiService.getStudentProgress()
       if (progressResponse.success) {
         const progress = progressResponse.data.progress
         setStats({
@@ -90,10 +88,16 @@ const StudentDashboard = () => {
 
   const handleDocumentProcessed = async (documentData) => {
     try {
-      setCreatingExam(true)
-      // Crear examen persistente en BD usando Gemini
+      // Verificar que el documento esté completamente analizado
+      if (documentData.status !== 'analyzed') {
+        console.warn('Documento no está completamente analizado:', documentData.status)
+        toast.info('Esperando a que el documento esté completamente procesado...')
+        return
+      }
+
+      // Crear examen automáticamente después de procesar el documento
       const examData = {
-        documentId: documentData.id,
+        documentId: documentData.id || documentData._id,
         title: `Examen de ${documentData.fileName}`,
         description: `Examen generado automáticamente basado en ${documentData.fileName}`,
         totalQuestions: 10,
@@ -104,21 +108,14 @@ const StudentDashboard = () => {
       const response = await apiService.createExam(examData)
       if (response.success) {
         toast.success('¡Documento procesado y examen creado exitosamente!')
-
-        // Recargar datos del dashboard (exámenes, documentos, stats simuladas)
-        loadDashboardData()
-
-        // Navegar directamente al examen recién creado
-        const newExamId = response.data?.exam?.id || response.data?.exam?._id
-        if (newExamId) {
-          navigate(`/exam/${newExamId}`)
-        }
+        
+        // Redirigir automáticamente a la página del examen
+        const examId = response.data.exam.id
+        navigate(`/exam/${examId}`)
       }
     } catch (error) {
       console.error('Error creando examen:', error)
-      toast.error('Error al crear el examen')
-    } finally {
-      setCreatingExam(false)
+      toast.error(error.message || 'Error al crear el examen')
     }
   }
 
@@ -204,21 +201,6 @@ const StudentDashboard = () => {
           </div>
         </div>
       </header>
-
-      {/* Overlay de carga mientras se genera el examen */}
-      {creatingExam && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl px-8 py-6 max-w-md w-full mx-4 text-center">
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-500 rounded-full animate-spin" />
-              <h2 className="text-lg font-semibold text-gray-800">Generando tu examen con IA...</h2>
-              <p className="text-sm text-gray-500">
-                Esto puede tomar unos segundos mientras la IA analiza tu documento y crea las preguntas.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
         {/* Stats Cards */}

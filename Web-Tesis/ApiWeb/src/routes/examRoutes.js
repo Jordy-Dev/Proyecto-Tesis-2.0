@@ -6,7 +6,6 @@ const { validate, examSchemas, querySchemas } = require('../middleware/validatio
 
 // Rutas de exámenes
 router.post('/create', authenticateToken, requireStudent, validate(examSchemas.create), examController.createExam);
-router.post('/generate-temp', authenticateToken, requireStudent, examController.generateTempExam);
 router.get('/my-exams', authenticateToken, requireStudent, validate(querySchemas.pagination, 'query'), examController.getUserExams);
 router.get('/by-grade', authenticateToken, requireTeacher, validate(querySchemas.filter, 'query'), examController.getExamsByGrade);
 router.get('/:examId', authenticateToken, examController.getExam);

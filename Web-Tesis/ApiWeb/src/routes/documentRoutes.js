@@ -7,34 +7,79 @@ const documentController = require('../controllers/documentController');
 const { authenticateToken, requireStudent, requireTeacher } = require('../middleware/auth');
 const { validate, documentSchemas, querySchemas } = require('../middleware/validation');
 
-// Configuración real de subida de archivos con multer
-const uploadPath = process.env.UPLOAD_PATH || './uploads';
-
-// Asegurar que la carpeta de uploads existe
-if (!fs.existsSync(uploadPath)) {
-  fs.mkdirSync(uploadPath, { recursive: true });
+// Crear directorio de uploads si no existe
+const uploadsDir = process.env.UPLOAD_PATH || './uploads';
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+// Configurar multer para subir archivos
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, uploadPath);
+    cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
     cb(null, uniqueSuffix + ext);
   }
 });
 
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE, 10) || 10 * 1024 * 1024
+const fileFilter = (req, file, cb) => {
+  // Permitir PDF, Word, TXT e imágenes
+  const allowedTypes = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/msword',
+    'text/plain',
+    'image/png',
+    'image/jpeg',
+    'image/jpg',
+    'image/gif',
+    'image/bmp',
+    'image/webp'
+  ];
+  
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Tipo de archivo no permitido'), false);
   }
+};
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024 // 10MB por defecto
+  },
+  fileFilter: fileFilter
 });
 
+// Middleware para manejar errores de multer
+const handleMulterError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        message: 'El archivo excede el tamaño máximo permitido (10MB)'
+      });
+    }
+    return res.status(400).json({
+      success: false,
+      message: err.message || 'Error al subir el archivo'
+    });
+  }
+  if (err) {
+    return res.status(400).json({
+      success: false,
+      message: err.message || 'Error al procesar el archivo'
+    });
+  }
+  next();
+};
+
 // Rutas de documentos
-router.post('/upload', authenticateToken, requireStudent, upload.single('file'), documentController.uploadDocument);
+router.post('/upload', authenticateToken, requireStudent, upload.single('file'), handleMulterError, documentController.uploadDocument);
 router.get('/my-documents', authenticateToken, requireStudent, validate(querySchemas.pagination, 'query'), documentController.getUserDocuments);
 router.get('/by-grade', authenticateToken, requireTeacher, validate(querySchemas.filter, 'query'), documentController.getDocumentsByGrade);
 router.get('/:documentId', authenticateToken, documentController.getDocument);

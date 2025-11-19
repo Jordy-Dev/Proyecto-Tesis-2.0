@@ -4,8 +4,7 @@ const QuestionOption = require('../models/QuestionOption');
 const StudentAnswer = require('../models/StudentAnswer');
 const ExamResult = require('../models/ExamResult');
 const StudentProgress = require('../models/StudentProgress');
-const Document = require('../models/Document');
-const { generateQuestionsFromText, generateQuestionsFromImage } = require('../config/gemini');
+const geminiService = require('../services/geminiService');
 
 // Crear examen
 const createExam = async (req, res, next) => {
@@ -13,7 +12,8 @@ const createExam = async (req, res, next) => {
     const { documentId, title, description, totalQuestions, passingScore, timeLimit } = req.body;
     const userId = req.user._id;
 
-    // Verificar que el documento existe
+    // Verificar que el documento existe y está analizado
+    const Document = require('../models/Document');
     const document = await Document.findById(documentId);
     
     if (!document) {
@@ -23,7 +23,14 @@ const createExam = async (req, res, next) => {
       });
     }
 
-    // Crear examen
+    if (document.status !== 'analyzed') {
+      return res.status(400).json({
+        success: false,
+        message: 'El documento debe estar analizado para generar un examen'
+      });
+    }
+
+    // Crear examen con estado 'processing' mientras se generan las preguntas
     const exam = new Exam({
       documentId,
       userId,
@@ -32,39 +39,23 @@ const createExam = async (req, res, next) => {
       totalQuestions,
       passingScore,
       timeLimit,
-      status: 'pending'
+      status: 'processing'
     });
 
     await exam.save();
 
-    // Generar preguntas reales usando Gemini según el tipo de documento
-    let geminiQuestions;
-
-    try {
-      if (document.fileType === 'image') {
-        // Para imágenes: enviar la imagen guardada en disco a Gemini
-        geminiQuestions = await generateQuestionsFromImage(document.filePath, totalQuestions);
-      } else {
-        // Para documentos con texto (txt, pdf procesado, etc.) usar el contenido textual
-        const contentText = document.contentText || 'Contenido no disponible';
-        geminiQuestions = await generateQuestionsFromText(contentText, totalQuestions);
-      }
-    } catch (error) {
-      // Manejar caso específico de modelo de IA sobrecargado
-      if (error.message && error.message.includes('The model is overloaded')) {
-        return res.status(503).json({
-          success: false,
-          message: 'El servicio de IA está temporalmente saturado. Intenta de nuevo en unos segundos.'
-        });
-      }
-      throw error;
-    }
-
-    await generateQuestions(exam._id, geminiQuestions);
+    // Generar preguntas con Gemini de forma asíncrona
+    generateQuestions(exam._id, document._id, totalQuestions || 10)
+      .then(() => {
+        console.log(`✅ Preguntas generadas exitosamente para examen ${exam._id}`);
+      })
+      .catch(error => {
+        console.error(`❌ Error generando preguntas para examen ${exam._id}:`, error);
+      });
 
     res.status(201).json({
       success: true,
-      message: 'Examen creado exitosamente',
+      message: 'Examen creado exitosamente. Las preguntas se están generando...',
       data: {
         exam: {
           id: exam._id,
@@ -80,44 +71,85 @@ const createExam = async (req, res, next) => {
   }
 };
 
-// Generar preguntas usando los datos devueltos por Gemini
-const generateQuestions = async (examId, geminiQuestions) => {
-  const questions = [];
+// Generar preguntas con Gemini
+const generateQuestions = async (examId, documentId, totalQuestions = 10) => {
+  try {
+    // Obtener el documento
+    const Document = require('../models/Document');
+    const document = await Document.findById(documentId);
 
-  for (let i = 0; i < geminiQuestions.length; i++) {
-    const q = geminiQuestions[i];
+    if (!document) {
+      throw new Error('Documento no encontrado');
+    }
 
-    const question = new Question({
-      examId,
-      questionNumber: i + 1,
-      questionText: q.questionText,
-      questionType: 'multiple_choice',
-      points: 10,
-      difficulty: q.difficulty || 'medium',
-      aiReasoning: 'Pregunta generada por Gemini 2.5 Flash'
-    });
+    if (!document.contentText) {
+      throw new Error('El documento no tiene contenido procesado');
+    }
 
-    await question.save();
-    questions.push(question);
+    // Generar preguntas con Gemini
+    const generatedQuestions = await geminiService.generateQuestionsWithGemini(
+      document.contentText,
+      totalQuestions
+    );
 
-    if (Array.isArray(q.options)) {
-      for (let j = 0; j < q.options.length; j++) {
-        const opt = q.options[j];
+    // Guardar preguntas en la base de datos
+    const questions = [];
+    const pointsPerQuestion = Math.floor(100 / totalQuestions);
 
-        const option = new QuestionOption({
-          questionId: question._id,
-          optionLetter: opt.letter,
-          optionText: opt.text,
-          isCorrect: !!opt.isCorrect,
-          orderNumber: j + 1
-        });
+    for (let i = 0; i < generatedQuestions.length; i++) {
+      const generatedQ = generatedQuestions[i];
+      
+      const question = new Question({
+        examId,
+        questionNumber: generatedQ.questionNumber || i + 1,
+        questionText: generatedQ.questionText,
+        questionType: 'multiple_choice',
+        points: pointsPerQuestion,
+        difficulty: generatedQ.difficulty || 'medium',
+        aiReasoning: generatedQ.explanation || 'Pregunta generada con Gemini'
+      });
 
-        await option.save();
+      await question.save();
+      questions.push(question);
+
+      // Guardar opciones para cada pregunta
+      if (generatedQ.options && Array.isArray(generatedQ.options)) {
+        for (let j = 0; j < generatedQ.options.length; j++) {
+          const opt = generatedQ.options[j];
+          const option = new QuestionOption({
+            questionId: question._id,
+            optionLetter: opt.letter,
+            optionText: opt.text,
+            isCorrect: opt.isCorrect === true,
+            orderNumber: j + 1
+          });
+
+          await option.save();
+        }
       }
     }
-  }
 
-  return questions;
+    // Actualizar el estado del examen a 'ready'
+    const exam = await Exam.findById(examId);
+    if (exam) {
+      exam.status = 'ready';
+      await exam.save();
+    }
+
+    console.log(`✅ Generadas ${questions.length} preguntas para el examen ${examId} usando Gemini`);
+    return questions;
+  } catch (error) {
+    console.error('Error generando preguntas con Gemini:', error);
+    
+    // Marcar el examen como error si falla la generación
+    const exam = await Exam.findById(examId);
+    if (exam) {
+      exam.status = 'error';
+      await exam.save();
+    }
+    
+    throw error;
+  }
 };
 
 // Obtener exámenes del usuario
@@ -255,7 +287,17 @@ const getExam = async (req, res, next) => {
       });
     }
 
-    // Acceso relajado: cualquier usuario autenticado puede ver el examen durante las pruebas
+    // Verificar acceso - comparar como strings para evitar problemas de tipo
+    const examUserId = exam.userId ? exam.userId.toString() : null;
+    const currentUserId = userId ? userId.toString() : null;
+    
+    if (req.user.userType === 'student' && examUserId && currentUserId && examUserId !== currentUserId) {
+      console.error(`Acceso denegado: exam.userId=${examUserId}, userId=${currentUserId}`);
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes acceso a este examen'
+      });
+    }
 
     res.json({
       success: true,
@@ -283,17 +325,53 @@ const startExam = async (req, res, next) => {
       });
     }
 
-    // Acceso relajado: cualquier usuario autenticado puede iniciar el examen durante las pruebas
+    // Verificar acceso - comparar como strings para evitar problemas de tipo
+    const examUserId = exam.userId ? exam.userId.toString() : null;
+    const currentUserId = userId ? userId.toString() : null;
+    
+    if (examUserId && currentUserId && examUserId !== currentUserId) {
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes acceso a este examen'
+      });
+    }
 
-    if (!exam.canBeStarted()) {
+    // Verificar que el examen puede ser iniciado
+    const canStart = exam.canBeStarted();
+    console.log(`Intentando iniciar examen ${examId}: status=${exam.status}, canBeStarted=${canStart}, isExpired=${exam.isExpired()}`);
+    
+    if (!canStart) {
+      // Proporcionar un mensaje más descriptivo
+      let reason = 'El examen no puede ser iniciado';
+      if (exam.status === 'processing') {
+        reason = 'El examen aún está generando las preguntas. Por favor espera unos momentos.';
+      } else if (exam.status === 'completed') {
+        reason = 'Este examen ya ha sido completado.';
+      } else if (exam.status === 'in_progress') {
+        reason = 'Este examen ya está en progreso.';
+      } else if (exam.isExpired()) {
+        reason = 'Este examen ha expirado.';
+      } else if (exam.status !== 'ready' && exam.status !== 'pending') {
+        reason = `El examen está en estado '${exam.status}' y no puede ser iniciado. Debe estar en estado 'ready' o 'pending'.`;
+      }
+      
       return res.status(400).json({
         success: false,
-        message: 'El examen no puede ser iniciado'
+        message: reason
       });
     }
 
     // Iniciar examen
-    await exam.start();
+    try {
+      await exam.start();
+    } catch (error) {
+      // Si el método start() lanza un error, proporcionar un mensaje más claro
+      console.error('Error en exam.start():', error);
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'El examen no puede ser iniciado en este momento'
+      });
+    }
 
     res.json({
       success: true,
@@ -327,13 +405,32 @@ const submitExam = async (req, res, next) => {
       });
     }
 
-    // Acceso relajado: cualquier usuario autenticado puede completar el examen durante las pruebas
+    // Verificar acceso - comparar como strings para evitar problemas de tipo
+    const examUserId = exam.userId ? exam.userId.toString() : null;
+    const currentUserId = userId ? userId.toString() : null;
+    
+    if (examUserId && currentUserId && examUserId !== currentUserId) {
+      console.error(`Acceso denegado al enviar: exam.userId=${examUserId}, userId=${currentUserId}`);
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes acceso a este examen'
+      });
+    }
 
-    // Solo bloquear si el examen ya está marcado como completado
-    if (exam.status === 'completed') {
+    if (!exam.canBeCompleted()) {
+      // Proporcionar un mensaje más descriptivo
+      let reason = 'El examen no puede ser completado';
+      if (exam.status === 'pending' || exam.status === 'processing' || exam.status === 'ready') {
+        reason = 'El examen debe ser iniciado antes de poder completarlo.';
+      } else if (exam.status === 'completed') {
+        reason = 'Este examen ya ha sido completado.';
+      } else if (exam.isExpired()) {
+        reason = 'Este examen ha expirado.';
+      }
+      
       return res.status(400).json({
         success: false,
-        message: 'El examen ya fue completado'
+        message: reason
       });
     }
 
@@ -350,9 +447,8 @@ const submitExam = async (req, res, next) => {
       await studentAnswer.save();
     }
 
-    // Completar examen: marcar manualmente como "completed" después de guardar respuestas
-    exam.status = 'completed';
-    await exam.save();
+    // Completar examen
+    await exam.complete();
 
     // Calcular resultado
     const result = await calculateExamResult(exam._id, userId);
@@ -414,51 +510,6 @@ const calculateExamResult = async (examId, userId) => {
   return result;
 };
 
-// Generar preguntas temporales sin guardar examen en la base de datos
-const generateTempExam = async (req, res, next) => {
-  try {
-    const { documentId, totalQuestions = 10 } = req.body;
-
-    const document = await Document.findById(documentId);
-
-    if (!document) {
-      return res.status(404).json({
-        success: false,
-        message: 'Documento no encontrado'
-      });
-    }
-
-    let geminiQuestions;
-
-    try {
-      if (document.fileType === 'image') {
-        geminiQuestions = await generateQuestionsFromImage(document.filePath, totalQuestions);
-      } else {
-        const contentText = document.contentText || 'Contenido no disponible';
-        geminiQuestions = await generateQuestionsFromText(contentText, totalQuestions);
-      }
-    } catch (error) {
-      if (error.message && error.message.includes('The model is overloaded')) {
-        return res.status(503).json({
-          success: false,
-          message: 'El servicio de IA está temporalmente saturado. Intenta de nuevo en unos segundos.'
-        });
-      }
-      throw error;
-    }
-
-    return res.json({
-      success: true,
-      message: 'Preguntas generadas exitosamente',
-      data: {
-        questions: geminiQuestions
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
 // Obtener preguntas del examen
 const getExamQuestions = async (req, res, next) => {
   try {
@@ -474,7 +525,17 @@ const getExamQuestions = async (req, res, next) => {
       });
     }
 
-    // Acceso relajado: cualquier usuario autenticado puede ver las preguntas del examen durante las pruebas
+    // Verificar acceso - comparar como strings para evitar problemas de tipo
+    const examUserId = exam.userId ? exam.userId.toString() : null;
+    const currentUserId = userId ? userId.toString() : null;
+    
+    if (req.user.userType === 'student' && examUserId && currentUserId && examUserId !== currentUserId) {
+      console.error(`Acceso denegado a preguntas: exam.userId=${examUserId}, userId=${currentUserId}`);
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes acceso a este examen'
+      });
+    }
 
     // Obtener preguntas con opciones
     const questions = await Question.find({ examId }).sort({ questionNumber: 1 });
@@ -525,8 +586,12 @@ const getExamResult = async (req, res, next) => {
       });
     }
 
-    // Verificar acceso
-    if (req.user.userType === 'student' && exam.userId.toString() !== userId) {
+    // Verificar acceso - comparar como strings para evitar problemas de tipo
+    const examUserId = exam.userId ? exam.userId.toString() : null;
+    const currentUserId = userId ? userId.toString() : null;
+    
+    if (req.user.userType === 'student' && examUserId && currentUserId && examUserId !== currentUserId) {
+      console.error(`Acceso denegado a preguntas: exam.userId=${examUserId}, userId=${currentUserId}`);
       return res.status(403).json({
         success: false,
         message: 'No tienes acceso a este examen'
@@ -561,8 +626,7 @@ module.exports = {
   startExam,
   submitExam,
   getExamQuestions,
-  getExamResult,
-  generateTempExam
+  getExamResult
 };
 
 

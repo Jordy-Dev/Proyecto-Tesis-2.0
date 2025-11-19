@@ -104,10 +104,11 @@ const getStudent = async (req, res, next) => {
   }
 };
 
-// Obtener progreso del estudiante
+// Obtener progreso del estudiante (para docentes)
 const getStudentProgress = async (req, res, next) => {
   try {
     const { studentId } = req.params;
+    const teacherGrade = req.user.grade;
 
     const student = await User.findById(studentId);
     
@@ -118,79 +119,74 @@ const getStudentProgress = async (req, res, next) => {
       });
     }
 
-    // Reglas de acceso:
-    // - Si es docente, solo puede ver estudiantes de su grado
-    // - Si es estudiante, solo puede ver su propio progreso
-    if (req.user.userType === 'teacher') {
-      const teacherGrade = req.user.grade;
-      if (student.grade !== teacherGrade) {
-        return res.status(403).json({
-          success: false,
-          message: 'Solo puedes acceder a estudiantes de tu grado asignado'
-        });
-      }
-    } else if (req.user.userType === 'student') {
-      if (student._id.toString() !== req.user._id.toString()) {
-        return res.status(403).json({
-          success: false,
-          message: 'Solo puedes acceder a tu propio progreso'
-        });
-      }
+    // Verificar que el estudiante pertenece al grado del docente
+    if (student.grade !== teacherGrade) {
+      return res.status(403).json({
+        success: false,
+        message: 'Solo puedes acceder a estudiantes de tu grado asignado'
+      });
     }
 
-    // Obtener estadísticas reales desde ExamResult
-    const stats = await ExamResult.getUserStatistics(studentId);
-
-    // Contar exámenes totales y completados para el estudiante
-    const totalExams = await Exam.countDocuments({ userId: studentId });
-    const completedExams = await Exam.countDocuments({ userId: studentId, status: 'completed' });
-
-    // Obtener último examen completado para la fecha
-    const lastResult = await ExamResult.findOne({ userId: studentId })
-      .sort({ completedAt: -1 })
-      .select('completedAt');
-
-    // Calcular racha actual de exámenes aprobados (consecutivos desde el más reciente)
-    const resultsForStreak = await ExamResult.find({ userId: studentId }).sort({ completedAt: -1 });
-    let currentStreak = 0;
-    let longestStreak = 0;
-
-    for (const r of resultsForStreak) {
-      if (r.passed) {
-        currentStreak += 1;
-        if (currentStreak > longestStreak) {
-          longestStreak = currentStreak;
-        }
-      } else {
-        // Rompe la racha actual pero seguimos buscando la más larga
-        if (currentStreak > longestStreak) {
-          longestStreak = currentStreak;
-        }
-        currentStreak = 0;
-      }
+    const progress = await StudentProgress.findOne({ userId: studentId });
+    
+    if (!progress) {
+      return res.status(404).json({
+        success: false,
+        message: 'Progreso no encontrado'
+      });
     }
 
-    const progress = {
-      userId: studentId,
-      totalExamsTaken: totalExams,
-      totalExamsPassed: stats.passedExams || 0,
-      totalExamsFailed: stats.failedExams || 0,
-      averageScore: stats.averageScore || 0,
-      currentStreak,
-      longestStreak,
-      lastExamDate: lastResult ? lastResult.completedAt : null
-    };
+    // Obtener estadísticas detalladas
+    const statistics = await ExamResult.getUserStatistics(studentId);
 
-    const statistics = {
-      totalExams: stats.totalExams || 0,
-      passedExams: stats.passedExams || 0,
-      failedExams: stats.failedExams || 0,
-      averageScore: stats.averageScore || 0,
-      highestScore: stats.highestScore || 0,
-      lowestScore: stats.lowestScore || 0,
-      totalPoints: stats.totalPoints || 0,
-      averageTime: stats.averageTime || 0
-    };
+    res.json({
+      success: true,
+      data: {
+        progress,
+        statistics
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Obtener progreso del estudiante autenticado (para estudiantes)
+const getMyProgress = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+
+    // Verificar que el usuario es estudiante
+    if (req.user.userType !== 'student') {
+      return res.status(403).json({
+        success: false,
+        message: 'Solo los estudiantes pueden acceder a su progreso'
+      });
+    }
+
+    // Obtener o crear progreso del estudiante
+    let progress = await StudentProgress.findOne({ userId });
+    
+    if (!progress) {
+      // Crear progreso inicial si no existe
+      progress = new StudentProgress({
+        userId,
+        totalExamsTaken: 0,
+        totalExamsPassed: 0,
+        averageScore: 0,
+        currentStreak: 0
+      });
+      await progress.save();
+    }
+
+    // Obtener estadísticas detalladas
+    let statistics = {};
+    try {
+      statistics = await ExamResult.getUserStatistics(userId);
+    } catch (statError) {
+      console.error('Error obteniendo estadísticas:', statError);
+      // Continuar sin estadísticas si hay error
+    }
 
     res.json({
       success: true,
@@ -359,6 +355,7 @@ module.exports = {
   getStudents,
   getStudent,
   getStudentProgress,
+  getMyProgress,
   getStudentExams,
   getStatistics,
   getRanking

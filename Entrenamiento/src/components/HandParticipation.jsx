@@ -73,6 +73,116 @@ export default function HandParticipation() {
   const updateIntervalRef = useRef(null)
   const countRef = useRef(0)
   const sessionSecondsRef = useRef(0)
+  const [statistics, setStatistics] = useState(null)
+  const [recentSessions, setRecentSessions] = useState([])
+  const [loadingData, setLoadingData] = useState(true)
+
+  // Cargar estadísticas y sesiones recientes desde la API
+  const loadDashboardData = useCallback(async () => {
+    try {
+      setLoadingData(true)
+      
+      // Cargar estadísticas del grado del docente
+      const stats = await participationApiService.getStatistics({
+        grade: teacherGrade
+      })
+      setStatistics(stats)
+      
+      // Cargar últimas 3 sesiones
+      const sessionsData = await participationApiService.getMySessions({
+        grade: teacherGrade,
+        limit: 3,
+        page: 1
+      })
+      setRecentSessions(sessionsData.sessions || [])
+      
+    } catch (error) {
+      console.error('Error cargando datos del dashboard:', error)
+    } finally {
+      setLoadingData(false)
+    }
+  }, [teacherGrade])
+
+  // Cargar datos al montar y cuando cambie el grado
+  useEffect(() => {
+    loadDashboardData()
+  }, [loadDashboardData])
+
+  // Formatear estadísticas para la UI
+  const historicalStats = useMemo(() => {
+    if (!statistics || !statistics.overview) return []
+    
+    const { overview } = statistics
+    const avgParticipations = Math.round(overview.averageParticipations || 0)
+    const totalParticipations = overview.totalParticipations || 0
+    const totalTime = overview.totalDuration || 0
+    const totalSessions = overview.totalSessions || 0
+    
+    // Convertir segundos a horas y minutos
+    const hours = Math.floor(totalTime / 3600)
+    const minutes = Math.floor((totalTime % 3600) / 60)
+    const timeStr = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
+    
+    // Encontrar el máximo de participaciones en una sesión
+    const maxInSession = totalSessions > 0 ? Math.round(totalParticipations / totalSessions * 1.5) : 0
+    
+    return [
+      { 
+        label: 'Promedio por sesión', 
+        value: `${avgParticipations} participaciones`, 
+        detail: `Total: ${totalParticipations} en ${totalSessions} sesiones` 
+      },
+      { 
+        label: 'Total registrado', 
+        value: `${totalParticipations} participaciones`, 
+        detail: `Sesiones completadas: ${overview.completedSessions || 0}`
+      },
+      { 
+        label: 'Tiempo acumulado', 
+        value: timeStr, 
+        detail: `Promedio: ${Math.round(overview.averageDuration / 60)} min por sesión` 
+      },
+    ]
+  }, [statistics])
+
+  // Formatear tendencias por sección
+  const historicalTrend = useMemo(() => {
+    if (!statistics || !statistics.bySection || statistics.bySection.length === 0) return []
+    
+    // Calcular el máximo de participaciones para normalizar las barras
+    const maxParticipations = Math.max(...statistics.bySection.map(s => s.totalParticipations))
+    
+    return statistics.bySection.map(sectionData => {
+      // Calcular porcentaje relativo al máximo
+      const percentage = maxParticipations > 0 
+        ? Math.round((sectionData.totalParticipations / maxParticipations) * 100)
+        : 0
+      
+      return {
+        label: `Sección ${sectionData.section}`,
+        value: percentage,
+        detail: `${Math.round(sectionData.averageParticipations)} participaciones promedio`
+      }
+    })
+  }, [statistics])
+
+  // Formatear sesiones recientes para la UI
+  const formattedSessions = useMemo(() => {
+    return recentSessions.map(session => {
+      const date = new Date(session.createdAt)
+      const duration = session.sessionDuration || 0
+      const minutes = Math.floor(duration / 60)
+      
+      return {
+        id: session._id,
+        date: date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }),
+        section: `Sección ${session.section}`,
+        duration: `${minutes} min`,
+        count: session.participationCount || 0,
+        status: session.status === 'completed' ? 'Completada' : session.status === 'active' ? 'Activa' : 'En revisión'
+      }
+    })
+  }, [recentSessions])
 
   const handleLogout = async () => {
     try {
@@ -310,6 +420,9 @@ export default function HandParticipation() {
         )
         setStatus('Sesión guardada')
         sessionIdRef.current = null
+        
+        // Recargar datos del dashboard después de completar la sesión
+        loadDashboardData()
       } catch (error) {
         console.error('Error al finalizar sesión:', error)
         setStatus('Sesión detenida (error al guardar)')
@@ -317,7 +430,7 @@ export default function HandParticipation() {
     } else {
       setStatus('Detenido')
     }
-  }, [stopCamera])
+  }, [stopCamera, loadDashboardData])
 
   const resetCounter = useCallback(() => {
     setCount(0)
@@ -418,132 +531,212 @@ export default function HandParticipation() {
         ))}
       </div>
 
-      {/* Información del usuario y botón de cerrar sesión */}
-      <div className="fixed top-4 right-4 sm:top-6 sm:right-6 z-50 flex items-center gap-3 sm:gap-4">
-        {/* Información del usuario */}
-        <div className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 bg-white/10 backdrop-blur-sm rounded-xl border border-white/20">
-          {user?.avatarUrl ? (
-            <img 
-              src={user.avatarUrl} 
-              alt={user.name || 'Usuario'}
-              className="w-6 h-6 sm:w-8 sm:h-8 rounded-full object-cover"
-            />
-          ) : (
-            <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-white/20 flex items-center justify-center">
-              <User className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-            </div>
-          )}
-          <div className="hidden sm:block">
-            <p className="text-white text-xs sm:text-sm font-medium">{user?.name || 'Docente'}</p>
-            <p className="text-white/70 text-xs">{user?.grade || 'Grado'}</p>
-          </div>
-        </div>
-        {/* Botón de cerrar sesión */}
-        <button
-          onClick={handleLogout}
-          className="flex flex-col items-center gap-2 p-3 sm:p-4 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-xl border border-white/20 transition-all duration-300 hover:scale-105 group"
-          title="Cerrar sesión"
-        >
-          <LogOut className="w-6 h-6 sm:w-8 sm:h-8 text-white group-hover:text-white/90 transition-colors" />
-          <span className="text-white text-xs sm:text-sm font-medium group-hover:text-white/90 transition-colors">Salir</span>
-        </button>
-      </div>
-
-      {/* Descripción del panel de docente en la parte superior izquierda */}
-      <div className="fixed top-4 left-4 sm:top-6 sm:left-6 z-50 max-w-xs sm:max-w-sm">
-        <div className="p-4 sm:p-5 bg-white/10 backdrop-blur-sm rounded-xl border border-white/20">
-          <h2 className="text-white text-base sm:text-lg font-bold mb-2">Panel de Docente - Colegio San Pedro</h2>
-          <p className="text-white/80 text-xs sm:text-sm mb-3 leading-relaxed">
-            Monitoreo de participación en tiempo real
-          </p>
-        </div>
-      </div>
-
       {/* Contenido principal */}
-      <div className="relative z-10 min-h-screen p-4">
+      <div className="relative z-10 min-h-screen p-4 sm:p-6 lg:p-10">
         <div className="sp-container">
-          <div className="sp-card-box">
-            <header className="sp-header">
-              <div className="sp-brand">
-                <div className="sp-logo">
-                  <img 
-                    src="/escudo.png" 
-                    alt="Escudo Colegio San Pedro" 
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-                <div className="sp-title">
-                  <h1>Detección de participación</h1>
-                  <p>Colegio San Pedro</p>
-                </div>
+          <div className="sp-dashboard">
+            <section className="sp-column sp-column-left">
+              <div className="sp-card-box sp-card-compact">
+                <div className="sp-card-title">Panel de Docente</div>
+                <p className="sp-card-subtitle">Colegio San Pedro · Monitoreo de participación en tiempo real</p>
+                <div className="sp-panel-badge">Vista académica 2025</div>
               </div>
-              <div className="sp-status">
-                <span className={`sp-badge ${isRunning ? 'live' : 'idle'}`}>{isRunning ? 'En vivo' : 'Listo'}</span>
-                <span className="sp-sub">{status}</span>
-              </div>
-            </header>
-          </div>
-          <div className="sp-card-box">
-            <main className="sp-main">
-              <section className="sp-stage">
-                <div className="sp-video-wrap">
-                  <video ref={videoRef} className="sp-video" playsInline muted></video>
-                  <canvas ref={canvasRef} className="sp-canvas"></canvas>
-                </div>
-                <div className="sp-overlay-info">
-                  <div className="sp-metric">
-                    <div className="sp-metric-label">Participaciones</div>
-                    <div className="sp-metric-value">{count}</div>
-                  </div>
-                  <div className="sp-metric">
-                    <div className="sp-metric-label">Tiempo</div>
-                    <div className="sp-metric-value">{minutes}:{seconds}</div>
-                  </div>
-                </div>
-              </section>
-              <aside className="sp-controls">
-                {/* Filtro de grado y sección */}
-                <div className="sp-section-filter">
-                  <div className="sp-filter-row">
-                    <div className="sp-grade-display">
-                      <Filter className="sp-filter-icon" />
-                      <span className="sp-filter-text">Mi grado asignado:</span>
-                      <span className="sp-grade-badge">{teacherGrade}</span>
-                    </div>
-                    <div className="sp-section-selector">
-                      <span className="sp-filter-text">Filtrar por sección:</span>
-                      <select
-                        id="section-select"
-                        value={selectedSection}
-                        onChange={(e) => setSelectedSection(e.target.value)}
-                        disabled={isRunning}
-                        className="sp-filter-select"
-                      >
-                        {sections.map((section) => (
-                          <option key={section} value={section}>
-                            Sección {section}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  
-                </div>
-                <div className="sp-cta">
-                  {!isRunning ? (
-                    <button className="sp-btn primary" onClick={startSession}>Iniciar detección</button>
+              <div className="sp-card-box sp-card-compact">
+                <div className="sp-card-title">Estadísticas históricas del aula</div>
+                <div className="sp-stat-list">
+                  {loadingData ? (
+                    <div className="sp-loading-text">Cargando estadísticas...</div>
+                  ) : historicalStats.length > 0 ? (
+                    historicalStats.map((stat) => (
+                      <div key={stat.label} className="sp-stat-item">
+                        <div className="sp-stat-label">{stat.label}</div>
+                        <div className="sp-stat-value">{stat.value}</div>
+                        <p className="sp-stat-detail">{stat.detail}</p>
+                      </div>
+                    ))
                   ) : (
-                    <button className="sp-btn danger" onClick={stopSession}>Detener</button>
+                    <div className="sp-loading-text">No hay datos disponibles</div>
                   )}
-                  <button className="sp-btn ghost" onClick={resetCounter} disabled={isRunning && count === 0}>Reiniciar contador</button>
                 </div>
-                <div className="sp-hint">
-                  <p>
-                    Para contar una participación, levanta la mano de forma vertical (mano extendida, dedo medio por encima de la muñeca).
-                  </p>
+              </div>
+              <div className="sp-card-box sp-card-compact">
+                <div className="sp-card-title">Tendencia por sección</div>
+                <div className="sp-trend-list">
+                  {loadingData ? (
+                    <div className="sp-loading-text">Cargando tendencias...</div>
+                  ) : historicalTrend.length > 0 ? (
+                    historicalTrend.map((trend) => (
+                      <div key={trend.label} className="sp-trend-row">
+                        <div>
+                          <p className="sp-trend-label">{trend.label}</p>
+                          <span className="sp-trend-value">{trend.detail}</span>
+                        </div>
+                        <div className="sp-trend-bar">
+                          <div className="sp-trend-bar-fill" style={{ width: `${trend.value}%` }}></div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="sp-loading-text">No hay datos de tendencias</div>
+                  )}
                 </div>
-              </aside>
-            </main>
+                {!loadingData && historicalTrend.length > 0 && (
+                  <p className="sp-trend-note">Datos consolidados de los últimos 30 días.</p>
+                )}
+              </div>
+            </section>
+
+            <section className="sp-column sp-column-center">
+              <div className="sp-card-box sp-card-highlight">
+                <header className="sp-header">
+                  <div className="sp-brand">
+                    <div className="sp-logo">
+                      <img 
+                        src="/escudo.png" 
+                        alt="Escudo Colegio San Pedro" 
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    <div className="sp-title">
+                      <h1>Detección de participación</h1>
+                      <p>Colegio San Pedro</p>
+                    </div>
+                  </div>
+                  <div className="sp-status">
+                    <span className={`sp-badge ${isRunning ? 'live' : 'idle'}`}>{isRunning ? 'En vivo' : 'Listo'}</span>
+                    <span className="sp-sub">{status}</span>
+                  </div>
+                </header>
+                <main className="sp-main">
+                  <section className="sp-stage">
+                    <div className="sp-video-wrap">
+                      <video ref={videoRef} className="sp-video" playsInline muted></video>
+                      <canvas ref={canvasRef} className="sp-canvas"></canvas>
+                    </div>
+                    <div className="sp-overlay-info">
+                      <div className="sp-metric">
+                        <div className="sp-metric-label">Participaciones</div>
+                        <div className="sp-metric-value">{count}</div>
+                      </div>
+                      <div className="sp-metric">
+                        <div className="sp-metric-label">Tiempo</div>
+                        <div className="sp-metric-value">{minutes}:{seconds}</div>
+                      </div>
+                    </div>
+                  </section>
+                  <aside className="sp-controls">
+                    <div className="sp-section-filter">
+                      <div className="sp-filter-row">
+                        <div className="sp-grade-display">
+                          <Filter className="sp-filter-icon" />
+                          <span className="sp-filter-text">Mi grado asignado:</span>
+                          <span className="sp-grade-badge">{teacherGrade}</span>
+                        </div>
+                        <div className="sp-section-selector">
+                          <span className="sp-filter-text">Filtrar por sección:</span>
+                          <select
+                            id="section-select"
+                            value={selectedSection}
+                            onChange={(e) => setSelectedSection(e.target.value)}
+                            disabled={isRunning}
+                            className="sp-filter-select"
+                          >
+                            {sections.map((section) => (
+                              <option key={section} value={section}>
+                                Sección {section}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="sp-cta">
+                      {!isRunning ? (
+                        <button className="sp-btn primary" onClick={startSession}>Iniciar detección</button>
+                      ) : (
+                        <button className="sp-btn danger" onClick={stopSession}>Detener</button>
+                      )}
+                      <button className="sp-btn ghost" onClick={resetCounter} disabled={isRunning && count === 0}>Reiniciar contador</button>
+                    </div>
+                    <div className="sp-hint">
+                      <p>
+                        Para contar una participación, levanta la mano de forma vertical (mano extendida, dedo medio por encima de la muñeca).
+                      </p>
+                    </div>
+                  </aside>
+                </main>
+              </div>
+            </section>
+
+            <section className="sp-column sp-column-right">
+              <div className="sp-card-box sp-card-compact sp-profile-card">
+                <div className="sp-profile-header">
+                  {user?.avatarUrl ? (
+                    <img 
+                      src={user.avatarUrl}
+                      alt={user?.name || 'Docente'}
+                      className="sp-profile-avatar"
+                    />
+                  ) : (
+                    <div className="sp-profile-avatar placeholder">
+                      <User className="w-6 h-6 text-white" />
+                    </div>
+                  )}
+                  <div>
+                    <p className="sp-profile-name">{user?.name || 'Docente'}</p>
+                    <span className="sp-profile-role">{teacherGrade}</span>
+                  </div>
+                  <span className="sp-status-pill">Docente activo</span>
+                </div>
+                <div className="sp-profile-meta">
+                  <div>
+                    <span>Sección en curso</span>
+                    <strong>Sección {selectedSection}</strong>
+                  </div>
+                  <div>
+                    <span>Sesiones totales</span>
+                    <strong>{statistics?.overview?.totalSessions || 0}</strong>
+                  </div>
+                  <div>
+                    <span>Última actualización</span>
+                    <strong>{new Date().toLocaleDateString('es-ES')}</strong>
+                  </div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="sp-btn ghost sp-profile-logout"
+                >
+                  <LogOut className="w-5 h-5" />
+                  Salir del panel
+                </button>
+              </div>
+
+              <div className="sp-card-box sp-card-compact">
+                <div className="sp-card-title">Sesiones recientes</div>
+                <div className="sp-session-list">
+                  {loadingData ? (
+                    <div className="sp-loading-text">Cargando sesiones...</div>
+                  ) : formattedSessions.length > 0 ? (
+                    formattedSessions.map((session) => (
+                      <div key={session.id} className="sp-session-item">
+                        <div>
+                          <p className="sp-session-date">{session.date}</p>
+                          <p className="sp-session-section">{session.section} · {session.duration}</p>
+                        </div>
+                        <div className="sp-session-meta">
+                          <span className="sp-session-count">{session.count}</span>
+                          <span className={`sp-session-status ${session.status === 'Completada' ? 'success' : 'warning'}`}>
+                            {session.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="sp-loading-text">No hay sesiones recientes</div>
+                  )}
+                </div>
+              </div>
+            </section>
           </div>
           <footer className="sp-footer">
             <span>© {new Date().getFullYear()} Colegio San Pedro</span>

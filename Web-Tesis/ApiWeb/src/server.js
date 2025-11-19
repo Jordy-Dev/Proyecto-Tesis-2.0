@@ -45,10 +45,10 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
-// Middleware de rate limiting
+// Middleware de rate limiting general
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutos
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // límite de 100 requests por ventana
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200, // límite de 200 requests por ventana (aumentado)
   message: {
     success: false,
     message: 'Demasiadas solicitudes desde esta IP, intenta de nuevo más tarde.'
@@ -57,8 +57,6 @@ const limiter = rateLimit({
   legacyHeaders: false
 });
 
-app.use('/api/', limiter);
-
 // Middleware para parsear JSON
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -66,11 +64,11 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Middleware para servir archivos estáticos
 app.use('/uploads', express.static('uploads'));
 
-// Rutas de la API
-app.use('/api/auth', authRoutes);
-app.use('/api/documents', documentRoutes);
-app.use('/api/exams', examRoutes);
-app.use('/api/users', userRoutes);
+// Rutas de la API (antes del rate limiting para que las rutas específicas puedan tener su propio limiter)
+app.use('/api/auth', limiter, authRoutes);
+app.use('/api/documents', limiter, documentRoutes);
+app.use('/api/exams', limiter, examRoutes);
+app.use('/api/users', limiter, userRoutes);
 
 // Ruta de salud
 app.get('/api/health', (req, res) => {
@@ -110,7 +108,7 @@ app.use('*', (req, res) => {
 app.use(errorHandler);
 
 // Configurar puerto
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Iniciar servidor
 const server = app.listen(PORT, () => {

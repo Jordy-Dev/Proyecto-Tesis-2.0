@@ -1,8 +1,57 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-import { API_BASE_URL, API_ENDPOINTS } from '../config/api';
 
-// Define la estructura de la respuesta del login
+// ========================================
+// CONFIGURACIÓN DE URL DE LA API
+// ========================================
+// IMPORTANTE: Si estás usando un DISPOSITIVO FÍSICO Android, cambia USE_PHYSICAL_DEVICE a true
+// y configura tu IP local en LOCAL_IP
+//
+// Para obtener tu IP local:
+//   - Windows: Abre CMD y ejecuta: ipconfig (busca "IPv4 Address")
+//   - Mac/Linux: Abre Terminal y ejecuta: ifconfig (busca "inet")
+//
+// Configuraciones:
+//   - Emulador Android: USE_PHYSICAL_DEVICE = false (usa 10.0.2.2)
+//   - Dispositivo físico Android: USE_PHYSICAL_DEVICE = true (usa LOCAL_IP)
+//   - iOS Simulator: No cambies nada (usa localhost)
+//   - Web: No cambies nada (usa localhost)
+// ========================================
+const USE_PHYSICAL_DEVICE = true; // ⚠️ CAMBIA A true SI USAS DISPOSITIVO FÍSICO ANDROID
+const LOCAL_IP = '192.168.1.65'; // Tu IP local (solo necesario si USE_PHYSICAL_DEVICE = true)
+
+// Función para obtener la URL base de la API según la plataforma
+const getApiBaseUrl = (): string => {
+  if (__DEV__) {
+    // En desarrollo
+    if (Platform.OS === 'android') {
+      // Emulador Android usa 10.0.2.2 para acceder al localhost de la máquina host
+      // Dispositivo físico Android necesita la IP local de tu máquina
+      if (USE_PHYSICAL_DEVICE) {
+        return `http://${LOCAL_IP}:3001/api`;
+      }
+      return `http://10.0.2.2:3001/api`;
+    } else if (Platform.OS === 'ios') {
+      // iOS Simulator puede usar localhost
+      return `http://localhost:3001/api`;
+    } else {
+      // Web
+      return `http://localhost:3001/api`;
+    }
+  } else {
+    // En producción, usar la URL real del servidor
+    return `https://tu-servidor.com/api`;
+  }
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
+// Log para debugging (solo en desarrollo)
+if (__DEV__) {
+  console.log('🔗 API Base URL:', API_BASE_URL);
+  console.log('📱 Platform:', Platform.OS);
+}
+
 export interface LoginResponse {
   success: boolean;
   message?: string;
@@ -12,19 +61,15 @@ export interface LoginResponse {
       name: string;
       email: string;
       userType: string;
-      grade: string;
-      section?: string;
     };
     token: string;
   };
 }
 
-// Clase principal para manejar las peticiones API
 class ApiService {
   private baseURL: string;
 
   constructor() {
-    // Usamos la misma URL base que la app de referencia
     this.baseURL = API_BASE_URL;
   }
 
@@ -39,7 +84,7 @@ class ApiService {
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
-        ...(token && { Authorization: `Bearer ${token}` }),  // Incluimos el token de autorización si está presente
+        ...(token && { Authorization: `Bearer ${token}` }),
         ...options.headers,
       },
       ...options,
@@ -64,7 +109,7 @@ class ApiService {
           throw new Error('Respuesta inválida del servidor');
         }
       } else {
-        // Si no es JSON, intentamos leer el texto de la respuesta
+        // Si no es JSON, usar el texto de la respuesta
         const text = await response.text();
         throw new Error(text || 'Error en la petición');
       }
@@ -81,15 +126,26 @@ class ApiService {
       console.error('❌ Error en API:', error);
       console.error(`🔗 URL que falló: ${url}`);
       console.error(`📱 Platform: ${Platform.OS}`);
-      console.error(`🌐 API_BASE_URL: ${this.baseURL}`);
+      console.error(`🔧 USE_PHYSICAL_DEVICE: ${USE_PHYSICAL_DEVICE}`);
+      console.error(`🌐 LOCAL_IP: ${LOCAL_IP}`);
 
       // Si es un error de red, proporcionar un mensaje más útil
       if (error.name === 'TypeError' && (error.message.includes('fetch') || error.message.includes('Network request failed'))) {
         let errorMessage = 'No se pudo conectar con el servidor.\n\n';
         errorMessage += `Intentando conectar a: ${url}\n\n`;
         errorMessage += 'Verifica:\n';
-        errorMessage += '1. Que la API esté ejecutándose y sea accesible\n';
-        errorMessage += `2. URL objetivo: ${this.baseURL}\n`;
+        errorMessage += '1. Que la API esté ejecutándose en el puerto 3001\n';
+        if (Platform.OS === 'android') {
+          if (USE_PHYSICAL_DEVICE) {
+            errorMessage += `2. Que tu IP local sea correcta: ${LOCAL_IP}\n`;
+            errorMessage += '3. Que el dispositivo y la computadora estén en la misma red WiFi\n';
+            errorMessage += '4. Que el firewall permita conexiones en el puerto 3001\n';
+          } else {
+            errorMessage += '2. Si estás usando un emulador, intenta con dispositivo físico\n';
+            errorMessage += '3. Si estás usando dispositivo físico, cambia USE_PHYSICAL_DEVICE a true\n';
+            errorMessage += `4. Verifica que 10.0.2.2 sea accesible desde el emulador\n`;
+          }
+        }
         throw new Error(errorMessage);
       }
 
@@ -97,7 +153,7 @@ class ApiService {
     }
   }
 
-  // Método de autenticación - login
+  // Métodos de autenticación
   async login(
     email: string,
     password: string,
@@ -105,15 +161,21 @@ class ApiService {
   ): Promise<LoginResponse> {
     console.log('🔐 Iniciando login...');
     try {
-      const response = await this.request<LoginResponse>(API_ENDPOINTS.LOGIN, {
+      const response = await this.request<LoginResponse>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password, userType }),
       });
 
       if (response.success && response.data?.token) {
         console.log('✅ Login exitoso, guardando token...');
-        await SecureStore.setItemAsync('auth_token', response.data.token);
-        await SecureStore.setItemAsync('user_data', JSON.stringify(response.data.user));
+        await SecureStore.setItemAsync(
+          'auth_token',
+          response.data.token
+        );
+        await SecureStore.setItemAsync(
+          'user_data',
+          JSON.stringify(response.data.user)
+        );
         console.log('✅ Token guardado correctamente');
       } else {
         console.warn('⚠️ Login exitoso pero sin token');
@@ -126,10 +188,11 @@ class ApiService {
     }
   }
 
-  // Método de autenticación - logout
   async logout(): Promise<void> {
     try {
-      await this.request(API_ENDPOINTS.LOGOUT, { method: 'POST' });
+      await this.request('/auth/logout', {
+        method: 'POST',
+      });
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
     } finally {
@@ -138,27 +201,26 @@ class ApiService {
     }
   }
 
-  // Obtener el perfil del usuario autenticado
   async getProfile() {
-    return this.request(API_ENDPOINTS.PROFILE);
+    return this.request('/auth/profile');
   }
 
   // Método para verificar si el usuario está autenticado
   async isAuthenticated(): Promise<boolean> {
     const token = await SecureStore.getItemAsync('auth_token');
     const userData = await SecureStore.getItemAsync('user_data');
-    return !!(token && userData);  // Si hay token y datos del usuario, se considera autenticado
+    return !!(token && userData);
   }
 
   // Método para obtener el usuario actual
   async getCurrentUser(): Promise<any | null> {
     const userData = await SecureStore.getItemAsync('user_data');
-    return userData ? JSON.parse(userData) : null;  // Devuelve los datos del usuario, si están almacenados
+    return userData ? JSON.parse(userData) : null;
   }
 }
 
 // Crear instancia única del servicio
 const apiService = new ApiService();
 
-// Exportamos la instancia para usarla en el resto de la app
 export default apiService;
+

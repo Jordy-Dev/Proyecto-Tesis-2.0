@@ -41,7 +41,7 @@ const examSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'in_progress', 'completed', 'expired'],
+    enum: ['pending', 'processing', 'ready', 'in_progress', 'completed', 'expired', 'error'],
     default: 'pending'
   },
   aiModelUsed: {
@@ -102,7 +102,7 @@ examSchema.methods.isExpired = function() {
 
 // Método para verificar si el examen puede ser iniciado
 examSchema.methods.canBeStarted = function() {
-  return this.status === 'pending' && !this.isExpired();
+  return (this.status === 'pending' || this.status === 'ready') && !this.isExpired();
 };
 
 // Método para verificar si el examen puede ser completado
@@ -141,7 +141,7 @@ examSchema.statics.findByStatus = function(status) {
 // Método estático para obtener exámenes activos
 examSchema.statics.findActive = function() {
   return this.find({ 
-    status: { $in: ['pending', 'in_progress'] },
+    status: { $in: ['pending', 'processing', 'ready', 'in_progress'] },
     $or: [
       { expiresAt: { $exists: false } },
       { expiresAt: { $gt: new Date() } }
@@ -157,9 +157,9 @@ examSchema.pre('save', async function(next) {
     if (!document) {
       return next(new Error('Documento no encontrado'));
     }
-    // Antes se exigía que document.status === 'analyzed'.
-    // Para facilitar la integración con Gemini y las pruebas,
-    // solo verificamos que el documento exista.
+    if (document.status !== 'analyzed') {
+      return next(new Error('El documento debe estar analizado para generar un examen'));
+    }
   }
   next();
 });

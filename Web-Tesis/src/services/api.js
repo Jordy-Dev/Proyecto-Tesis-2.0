@@ -118,13 +118,11 @@ class ApiService {
     formData.append('fileSize', fileSize);
 
     const token = localStorage.getItem('token');
-
+    
     const response = await fetch(`${this.baseURL}/documents/upload`, {
       method: 'POST',
       headers: {
         ...(token && { Authorization: `Bearer ${token}` }),
-        // No establecer Content-Type manualmente para que el navegador
-        // configure correctamente multipart/form-data con boundary
       },
       body: formData,
     });
@@ -168,6 +166,12 @@ class ApiService {
     });
   }
 
+  // Verificar estado del documento
+  async checkDocumentStatus(documentId) {
+    const response = await this.request(`/documents/${documentId}`);
+    return response.data.document;
+  }
+
   async getDocumentsByGrade(grade = null, section = null) {
     const params = new URLSearchParams();
     if (grade) params.append('grade', grade);
@@ -181,13 +185,6 @@ class ApiService {
     return this.request('/exams/create', {
       method: 'POST',
       body: JSON.stringify(examData),
-    });
-  }
-
-  async generateTempExam(payload) {
-    return this.request('/exams/generate-temp', {
-      method: 'POST',
-      body: JSON.stringify(payload),
     });
   }
 
@@ -245,6 +242,10 @@ class ApiService {
   }
 
   async getStudentProgress(studentId) {
+    // Si no se proporciona studentId, obtener el progreso del usuario actual
+    if (!studentId) {
+      return this.request('/users/my-progress');
+    }
     return this.request(`/users/students/${studentId}/progress`);
   }
 

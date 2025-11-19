@@ -2,11 +2,11 @@ const Document = require('../models/Document');
 const Exam = require('../models/Exam');
 const path = require('path');
 const fs = require('fs').promises;
+const geminiService = require('../services/geminiService');
 
 // Subir documento
 const uploadDocument = async (req, res, next) => {
   try {
-    const { fileName, fileType, fileSize } = req.body;
     const userId = req.user._id;
 
     // Verificar que el usuario es estudiante
@@ -17,11 +17,40 @@ const uploadDocument = async (req, res, next) => {
       });
     }
 
+    // Verificar que hay un archivo
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se ha proporcionado ningún archivo'
+      });
+    }
+
+    // Obtener información del archivo
+    const fileName = req.body.fileName || req.file.originalname;
+    const fileType = req.body.fileType || getFileTypeFromMime(req.file.mimetype);
+    const fileSize = req.file.size;
+
+    // Validar tipo de archivo
+    const allowedTypes = ['pdf', 'docx', 'txt', 'image'];
+    if (!allowedTypes.includes(fileType)) {
+      // Eliminar archivo subido si el tipo no es válido
+      try {
+        await fs.unlink(req.file.path);
+      } catch (unlinkError) {
+        console.error('Error eliminando archivo:', unlinkError);
+      }
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Tipo de archivo no permitido'
+      });
+    }
+
     // Crear documento en la base de datos
     const document = new Document({
       userId,
       fileName,
-      filePath: req.file ? req.file.path : null,
+      filePath: req.file.path,
       fileType,
       fileSize,
       status: 'uploaded'
@@ -44,8 +73,25 @@ const uploadDocument = async (req, res, next) => {
       }
     });
   } catch (error) {
+    // Eliminar archivo si hay error
+    if (req.file && req.file.path) {
+      try {
+        await fs.unlink(req.file.path);
+      } catch (unlinkError) {
+        console.error('Error eliminando archivo:', unlinkError);
+      }
+    }
     next(error);
   }
+};
+
+// Función auxiliar para obtener el tipo de archivo desde el MIME type
+const getFileTypeFromMime = (mimeType) => {
+  if (mimeType === 'application/pdf') return 'pdf';
+  if (mimeType.includes('word') || mimeType.includes('document')) return 'docx';
+  if (mimeType === 'text/plain') return 'txt';
+  if (mimeType.startsWith('image/')) return 'image';
+  return 'unknown';
 };
 
 // Obtener documentos del usuario
@@ -93,7 +139,7 @@ const getUserDocuments = async (req, res, next) => {
 const getDocument = async (req, res, next) => {
   try {
     const { documentId } = req.params;
-    const userId = req.user._id;
+    const userId = req.user._id.toString();
 
     const document = await Document.findById(documentId).populate('exam');
     
@@ -104,8 +150,8 @@ const getDocument = async (req, res, next) => {
       });
     }
 
-    // Verificar acceso: los estudiantes solo pueden ver sus propios documentos
-    if (req.user.userType === 'student' && document.userId.toString() !== userId) {
+    // Verificar acceso - comparar ambos como strings para evitar problemas de tipo
+    if (req.user.userType === 'student' && document.userId.toString() !== userId.toString()) {
       return res.status(403).json({
         success: false,
         message: 'No tienes acceso a este documento'
@@ -128,7 +174,7 @@ const updateDocument = async (req, res, next) => {
   try {
     const { documentId } = req.params;
     const { fileName, contentText } = req.body;
-    const userId = req.user._id;
+    const userId = req.user._id.toString();
 
     const document = await Document.findById(documentId);
     
@@ -139,8 +185,8 @@ const updateDocument = async (req, res, next) => {
       });
     }
 
-    // Verificar acceso
-    if (req.user.userType === 'student' && document.userId.toString() !== userId) {
+    // Verificar acceso - comparar ambos como strings para evitar problemas de tipo
+    if (req.user.userType === 'student' && document.userId.toString() !== userId.toString()) {
       return res.status(403).json({
         success: false,
         message: 'No tienes acceso a este documento'
@@ -169,7 +215,7 @@ const updateDocument = async (req, res, next) => {
 const deleteDocument = async (req, res, next) => {
   try {
     const { documentId } = req.params;
-    const userId = req.user._id;
+    const userId = req.user._id.toString();
 
     const document = await Document.findById(documentId);
     
@@ -180,8 +226,8 @@ const deleteDocument = async (req, res, next) => {
       });
     }
 
-    // Verificar acceso
-    if (req.user.userType === 'student' && document.userId.toString() !== userId) {
+    // Verificar acceso - comparar ambos como strings para evitar problemas de tipo
+    if (req.user.userType === 'student' && document.userId.toString() !== userId.toString()) {
       return res.status(403).json({
         success: false,
         message: 'No tienes acceso a este documento'
@@ -300,10 +346,11 @@ const getDocumentsByGrade = async (req, res, next) => {
   }
 };
 
-// Procesar documento con IA (simulado)
+// Procesar documento con Gemini
 const processDocument = async (req, res, next) => {
   try {
     const { documentId } = req.params;
+    const userId = req.user._id.toString();
 
     const document = await Document.findById(documentId);
     
@@ -314,16 +361,35 @@ const processDocument = async (req, res, next) => {
       });
     }
 
-    // Marcar inmediatamente como analizado (por ahora el procesamiento es simulado)
-    document.status = 'analyzed';
-    if (!document.contentText) {
-      document.contentText = 'Contenido extraído del documento...'; // Simulado
+    // Verificar acceso - comparar ambos como strings para evitar problemas de tipo
+    if (req.user.userType === 'student' && document.userId.toString() !== userId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes acceso a este documento'
+      });
     }
+
+    // Verificar que el archivo existe
+    if (!document.filePath) {
+      return res.status(400).json({
+        success: false,
+        message: 'El documento no tiene un archivo asociado'
+      });
+    }
+
+    // Marcar como procesando
+    document.status = 'processing';
+    document.errorMessage = undefined;
     await document.save();
+
+    // Procesar de forma asíncrona
+    processDocumentAsync(document).catch(error => {
+      console.error('Error procesando documento de forma asíncrona:', error);
+    });
 
     res.json({
       success: true,
-      message: 'Documento procesado exitosamente',
+      message: 'Documento enviado para procesamiento con Gemini',
       data: {
         document: {
           id: document._id,
@@ -333,6 +399,37 @@ const processDocument = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+// Procesar documento de forma asíncrona con Gemini
+const processDocumentAsync = async (document) => {
+  try {
+    // Procesar documento con Gemini
+    const processedContent = await geminiService.processDocumentWithGemini(
+      document.filePath,
+      document.fileType
+    );
+
+    // Actualizar documento con el contenido procesado
+    if (typeof processedContent === 'string') {
+      // Para imágenes, processedContent es directamente el texto
+      document.contentText = processedContent;
+    } else {
+      // Para documentos de texto, usar el texto original extraído
+      document.contentText = processedContent.originalText || processedContent.analyzedContent;
+    }
+
+    document.status = 'analyzed';
+    document.errorMessage = undefined;
+    await document.save();
+
+    console.log(`✅ Documento ${document._id} procesado exitosamente con Gemini`);
+  } catch (error) {
+    console.error(`❌ Error procesando documento ${document._id}:`, error);
+    document.status = 'error';
+    document.errorMessage = error.message || 'Error procesando el documento con Gemini';
+    await document.save();
   }
 };
 

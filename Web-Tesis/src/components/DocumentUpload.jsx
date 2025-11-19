@@ -91,20 +91,63 @@ const DocumentUpload = ({ onDocumentProcessed }) => {
       if (response.success) {
         setProcessingStep('Procesando con IA...')
         
-        // Procesar documento con IA
+        // Procesar documento con IA (asíncrono)
         const processResponse = await apiService.processDocument(response.data.document.id)
         
         if (processResponse.success) {
-          setProcessingStep('¡Documento procesado exitosamente!')
-          toast.success('¡Documento procesado exitosamente!')
+          setProcessingStep('Esperando análisis completo...')
           
-          // Notificar al componente padre
-          if (onDocumentProcessed) {
-            onDocumentProcessed(response.data.document)
+          // Esperar a que el documento esté completamente procesado
+          const documentId = response.data.document.id
+          let documentStatus = 'processing'
+          let attempts = 0
+          const maxAttempts = 40 // Máximo 40 intentos (reducido para evitar rate limit)
+          let baseDelay = 10000 // Empezar con 10 segundos
+          
+          // Polling con backoff exponencial para verificar el estado
+          while (documentStatus === 'processing' && attempts < maxAttempts) {
+            // Backoff exponencial: 10s, 15s, 20s, 25s...
+            const delay = baseDelay + (attempts * 5000)
+            await new Promise(resolve => setTimeout(resolve, delay))
+            
+            try {
+              const statusResponse = await apiService.checkDocumentStatus(documentId)
+              documentStatus = statusResponse.status
+              
+              if (documentStatus === 'analyzed') {
+                setProcessingStep('¡Documento procesado exitosamente!')
+                toast.success('¡Documento procesado exitosamente!')
+                
+                // Notificar al componente padre con el documento actualizado
+                if (onDocumentProcessed) {
+                  onDocumentProcessed(statusResponse)
+                }
+                
+                // Limpiar archivo
+                setUploadedFile(null)
+                break
+              } else if (documentStatus === 'error') {
+                throw new Error(statusResponse.errorMessage || 'Error procesando el documento')
+              }
+            } catch (error) {
+              // Si es error 429 (rate limit), esperar más tiempo antes de reintentar
+              if (error.message?.includes('429') || error.message?.includes('Demasiadas solicitudes')) {
+                console.warn('Rate limit alcanzado, esperando más tiempo...')
+                await new Promise(resolve => setTimeout(resolve, 30000)) // Esperar 30 segundos adicionales
+                continue
+              }
+              console.error('Error verificando estado:', error)
+              // Continuar intentando
+            }
+            
+            attempts++
           }
           
-          // Limpiar archivo
-          setUploadedFile(null)
+          if (documentStatus === 'processing') {
+            throw new Error('El procesamiento está tomando más tiempo del esperado. El examen se creará cuando el documento esté listo.')
+          } else if (documentStatus !== 'analyzed') {
+            throw new Error('Error procesando documento')
+          }
         } else {
           throw new Error(processResponse.message || 'Error procesando documento')
         }

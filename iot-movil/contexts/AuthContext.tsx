@@ -38,8 +38,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const user: User = {
           id: parsedUser._id || parsedUser.id,
           email: parsedUser.email,
-          name: parsedUser.name,
-          grade: parsedUser.grade,
+          name: parsedUser.name
         };
         setUser(user);
       }
@@ -74,8 +73,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const userData: User = {
           id: apiUser._id,
           email: apiUser.email,
-          name: apiUser.name,
-          grade: apiUser.grade,
+          name: apiUser.name
         };
         
         setUser(userData);

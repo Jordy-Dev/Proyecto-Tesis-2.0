@@ -10,12 +10,11 @@ import Register from './pages/Register'
 import StudentDashboard from './pages/StudentDashboard'
 import TeacherDashboard from './pages/TeacherDashboard'
 import ExamPage from './pages/ExamPage'
-import TempExamPage from './pages/TempExamPage'
 
 function App() {
   return (
     <AuthProvider>
-      <Router>
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <div className="min-h-screen">
           <Routes>
             <Route path="/" element={<LandingPage />} />
@@ -42,14 +41,6 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ExamPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/temp-exam" 
-              element={
-                <ProtectedRoute>
-                  <TempExamPage />
                 </ProtectedRoute>
               } 
             />
